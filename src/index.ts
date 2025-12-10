@@ -4,7 +4,8 @@
  * Dual-AI transcript analysis with Claude Sonnet 4.5 + GPT-5
  */
 
-import { App, ExpressReceiver } from '@slack/bolt';
+import pkg from '@slack/bolt';
+const { App, ExpressReceiver } = pkg;
 import { PrismaClient } from '@prisma/client';
 import pino from 'pino';
 import dotenv from 'dotenv';
