@@ -119,14 +119,21 @@ const PORT = process.env.PORT || 5000;
     // Register Slack handlers after exports are complete (avoid circular dependency)
     await import('./slack/handlers.js');
 
-    // Start server
-    await slack.start(PORT);
-    logger.info(`⚡️ MeetyAI server running on port ${PORT}`);
-    logger.info(`📊 Dual-AI processing: Claude Sonnet 4.5 + GPT-5`);
-    logger.info(`🔗 Health check: http://localhost:${PORT}/health`);
-    logger.info(`🔗 Debug Slack: http://localhost:${PORT}/debug/slack`);
-    logger.info(`🤖 Slack events endpoint: POST http://localhost:${PORT}/slack/events`);
-    logger.info(`💡 Set Request URL in Slack App > Event Subscriptions to: https://[your-railway-domain]/slack/events`);
+    // Start server - bind to 0.0.0.0 for Railway
+    const PORT_NUM = parseInt(PORT.toString(), 10);
+    const server = receiver.app.listen(PORT_NUM, '0.0.0.0', () => {
+      logger.info(`⚡️ MeetyAI server running on port ${PORT_NUM}`);
+      logger.info(`📊 Dual-AI processing: Claude Sonnet 4.5 + GPT-5`);
+      logger.info(`🔗 Health check: http://localhost:${PORT_NUM}/health`);
+      logger.info(`🤖 Slack events: POST /slack/events`);
+      logger.info(`💡 Railway URL: https://meetyai-rebuild-production.up.railway.app`);
+    });
+
+    // Ensure server is accessible
+    server.on('error', (err) => {
+      logger.error({ error: err }, '❌ Server error');
+      process.exit(1);
+    });
 
   } catch (error) {
     logger.error({ error }, '❌ Failed to start server');
