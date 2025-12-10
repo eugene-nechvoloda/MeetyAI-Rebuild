@@ -9,6 +9,7 @@ const { App, ExpressReceiver } = pkg;
 import { PrismaClient } from '@prisma/client';
 import pino from 'pino';
 import dotenv from 'dotenv';
+import express from 'express';
 
 // Load environment variables
 dotenv.config();
@@ -50,19 +51,28 @@ prisma.$on('warn', (e: any) => {
   logger.warn('Prisma warning:', e);
 });
 
-// Initialize Slack Bolt with ExpressReceiver
-// ExpressReceiver automatically handles:
-// - URL verification challenges (responds with {"challenge": "..."})
-// - SSL checks
-// - Signature verification
-// - Body parsing
+// Create custom Express app to handle Slack challenge manually
+const customApp = express();
+customApp.set('trust proxy', true);
+
+// Simple challenge handler - runs BEFORE signature verification
+customApp.post('/slack/events', express.json(), (req, res, next) => {
+  // Check if this is a URL verification challenge
+  if (req.body && req.body.type === 'url_verification' && req.body.challenge) {
+    logger.info({ challenge: req.body.challenge }, '✅ Slack URL verification - responding with challenge');
+    // Return challenge exactly as Slack documentation specifies
+    return res.status(200).type('text/plain').send(req.body.challenge);
+  }
+  // Not a challenge, pass to Slack Bolt for normal processing
+  next();
+});
+
+// Initialize Slack Bolt with our custom Express app
 const receiver = new ExpressReceiver({
   signingSecret: process.env.SLACK_SIGNING_SECRET!,
   endpoints: '/slack/events',
+  app: customApp,
 });
-
-// Configure Express to trust Railway's proxy for correct IP/protocol detection
-receiver.app.set('trust proxy', true);
 
 export const slack = new App({
   token: process.env.SLACK_BOT_TOKEN,
