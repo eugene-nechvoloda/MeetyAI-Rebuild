@@ -114,4 +114,40 @@ slack.action('open_settings_button', async ({ ack, client, body }) => {
   }
 });
 
+// Tab switching - Transcripts
+slack.action('switch_to_transcripts', async ({ ack, client, body }) => {
+  try {
+    await ack();
+    logger.info('📝 Switching to Transcripts tab');
+
+    const userId = (body as any).user.id;
+    const view = await buildHomeTab(userId, 'transcripts');
+
+    await client.views.publish({
+      user_id: userId,
+      view: view as any,
+    });
+  } catch (error) {
+    logger.error({ error }, '❌ Error switching to transcripts tab');
+  }
+});
+
+// Tab switching - Insights
+slack.action('switch_to_insights', async ({ ack, client, body }) => {
+  try {
+    await ack();
+    logger.info('💡 Switching to Insights tab');
+
+    const userId = (body as any).user.id;
+    const view = await buildHomeTab(userId, 'insights');
+
+    await client.views.publish({
+      user_id: userId,
+      view: view as any,
+    });
+  } catch (error) {
+    logger.error({ error }, '❌ Error switching to insights tab');
+  }
+});
+
 logger.info('✅ Slack handlers registered');
