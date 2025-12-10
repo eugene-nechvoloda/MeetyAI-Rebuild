@@ -69,6 +69,15 @@ export const slack = new App({
   receiver,
 });
 
+// Root endpoint for Railway health check
+receiver.router.get('/', (req, res) => {
+  res.json({
+    app: 'MeetyAI',
+    status: 'running',
+    version: '2.0.0',
+  });
+});
+
 // Health check endpoint
 receiver.router.get('/health', (req, res) => {
   res.json({
