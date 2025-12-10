@@ -13,16 +13,20 @@ import { prisma } from '../index.js';
 // App Home opened
 slack.event('app_home_opened', async ({ event, client }) => {
   try {
-    logger.info(`App home opened by user ${event.user}`);
+    logger.info({ user: event.user, tab: event.tab }, '🏠 App home opened');
 
     const view = await buildHomeTab(event.user);
+
+    logger.info({ user: event.user, blockCount: view.blocks?.length }, '📝 Built home view');
 
     await client.views.publish({
       user_id: event.user,
       view: view as any,
     });
+
+    logger.info({ user: event.user }, '✅ Successfully published home view');
   } catch (error) {
-    logger.error({ error }, 'Error handling app_home_opened');
+    logger.error({ error, user: event.user }, '❌ Error handling app_home_opened');
   }
 });
 
