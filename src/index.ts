@@ -9,6 +9,7 @@ const { App, ExpressReceiver } = pkg;
 import { PrismaClient } from '@prisma/client';
 import pino from 'pino';
 import dotenv from 'dotenv';
+import express from 'express';
 
 // Load environment variables
 dotenv.config();
@@ -58,6 +59,30 @@ const receiver = new ExpressReceiver({
 
 // Configure Express to trust Railway's proxy
 receiver.app.set('trust proxy', true);
+
+// Add body parser middleware for challenge verification
+receiver.app.use('/slack/events', express.json());
+
+// Add explicit challenge handler BEFORE Slack Bolt processes the request
+receiver.app.use('/slack/events', (req, res, next) => {
+  // Log all incoming requests
+  logger.info({
+    method: req.method,
+    path: req.path,
+    body: req.body,
+    challenge: req.body?.challenge,
+    type: req.body?.type,
+  }, '📨 Slack events request received');
+
+  // Handle challenge verification explicitly
+  if (req.body && req.body.type === 'url_verification' && req.body.challenge) {
+    logger.info({ challenge: req.body.challenge }, '✅ Challenge request detected - responding');
+    return res.json({ challenge: req.body.challenge });
+  }
+
+  // Pass to Slack Bolt for other requests
+  next();
+});
 
 export const slack = new App({
   token: process.env.SLACK_BOT_TOKEN,
