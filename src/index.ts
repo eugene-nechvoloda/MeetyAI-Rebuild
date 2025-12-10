@@ -56,6 +56,21 @@ const receiver = new ExpressReceiver({
   endpoints: '/slack/events',
 });
 
+// Add request logging middleware
+receiver.router.use('/slack/events', (req, res, next) => {
+  logger.info({
+    method: req.method,
+    path: req.path,
+    body: req.body,
+    headers: {
+      'content-type': req.headers['content-type'],
+      'x-slack-signature': req.headers['x-slack-signature'] ? 'present' : 'missing',
+      'x-slack-request-timestamp': req.headers['x-slack-request-timestamp'],
+    },
+  }, '📨 Incoming Slack request');
+  next();
+});
+
 export const slack = new App({
   token: process.env.SLACK_BOT_TOKEN,
   receiver,
@@ -67,6 +82,19 @@ receiver.router.get('/health', (req, res) => {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     version: '2.0.0',
+    slack: {
+      endpoint: '/slack/events',
+      configured: !!process.env.SLACK_BOT_TOKEN && !!process.env.SLACK_SIGNING_SECRET,
+    },
+  });
+});
+
+// Slack endpoint test
+receiver.router.get('/slack/events', (req, res) => {
+  logger.info('GET request to /slack/events - Slack challenge endpoint');
+  res.json({
+    status: 'ok',
+    message: 'Slack events endpoint is ready. POST requests will be handled by Slack Bolt.',
   });
 });
 
