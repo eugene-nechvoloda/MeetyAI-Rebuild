@@ -4,7 +4,7 @@
 
 import { prisma, logger } from '../../index.js';
 
-export async function buildHomeTab(userId: string) {
+export async function buildHomeTab(userId: string, activeTab: 'transcripts' | 'insights' = 'transcripts') {
   try {
     // Get transcripts for this user
     const transcripts = await prisma.transcript.findMany({
@@ -21,7 +21,27 @@ export async function buildHomeTab(userId: string) {
       },
     });
 
+    // Get insights for this user
+    const insights = await prisma.insight.findMany({
+      where: {
+        transcript: {
+          slack_user_id: userId,
+        },
+        archived: false,
+      },
+      include: {
+        transcript: {
+          select: {
+            title: true,
+          },
+        },
+      },
+      orderBy: { created_at: 'desc' },
+      take: 20,
+    });
+
     const blocks: any[] = [
+      // Header
       {
         type: 'header',
         text: {
@@ -40,6 +60,7 @@ export async function buildHomeTab(userId: string) {
       {
         type: 'divider',
       },
+      // Upload & Settings Buttons (always visible)
       {
         type: 'actions',
         elements: [
@@ -53,62 +74,141 @@ export async function buildHomeTab(userId: string) {
             style: 'primary',
             action_id: 'upload_transcript_button',
           },
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '⚙️ Settings',
+              emoji: true,
+            },
+            action_id: 'open_settings_button',
+          },
         ],
       },
       {
         type: 'divider',
       },
+      // Tab Navigation
       {
-        type: 'header',
-        text: {
-          type: 'plain_text',
-          text: '📝 Recent Transcripts',
-          emoji: true,
-        },
+        type: 'actions',
+        elements: [
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '📝 Transcripts',
+              emoji: true,
+            },
+            style: activeTab === 'transcripts' ? 'primary' : undefined,
+            action_id: 'switch_to_transcripts',
+            value: 'transcripts',
+          },
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '💡 Insights',
+              emoji: true,
+            },
+            style: activeTab === 'insights' ? 'primary' : undefined,
+            action_id: 'switch_to_insights',
+            value: 'insights',
+          },
+        ],
+      },
+      {
+        type: 'divider',
       },
     ];
 
-    if (transcripts.length === 0) {
-      blocks.push({
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: '_No transcripts yet. Upload your first meeting transcript to get started!_',
-        },
-      });
-    } else {
-      for (const transcript of transcripts) {
-        const statusEmoji = getStatusEmoji(transcript.status);
-        const statusText = getStatusText(transcript.status);
-        const insightCount = transcript._count.insights;
-
+    // Content based on active tab
+    if (activeTab === 'transcripts') {
+      // Transcripts Tab Content
+      if (transcripts.length === 0) {
         blocks.push({
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: `*${transcript.title}*\n${statusEmoji} ${statusText} • ${insightCount} insights\n_Uploaded: ${new Date(transcript.created_at).toLocaleDateString()}_`,
-          },
-          accessory: {
-            type: 'overflow',
-            options: [
-              {
-                text: {
-                  type: 'plain_text',
-                  text: '🔄 Re-analyze',
-                },
-                value: transcript.id,
-              },
-              {
-                text: {
-                  type: 'plain_text',
-                  text: '🗑️ Archive',
-                },
-                value: transcript.id,
-              },
-            ],
-            action_id: `transcript_menu_${transcript.id}`,
+            text: '_No transcripts yet. Upload your first meeting transcript to get started!_',
           },
         });
+      } else {
+        for (const transcript of transcripts) {
+          const statusEmoji = getStatusEmoji(transcript.status);
+          const statusText = getStatusText(transcript.status);
+          const insightCount = transcript._count.insights;
+
+          blocks.push({
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `*${transcript.title}*\n${statusEmoji} ${statusText} • ${insightCount} insights\n_Uploaded: ${new Date(transcript.created_at).toLocaleDateString()}_`,
+            },
+            accessory: {
+              type: 'overflow',
+              options: [
+                {
+                  text: {
+                    type: 'plain_text',
+                    text: '🔄 Re-analyze',
+                  },
+                  value: transcript.id,
+                },
+                {
+                  text: {
+                    type: 'plain_text',
+                    text: '🗑️ Archive',
+                  },
+                  value: transcript.id,
+                },
+              ],
+              action_id: `transcript_menu_${transcript.id}`,
+            },
+          });
+        }
+      }
+    } else {
+      // Insights Tab Content
+      if (insights.length === 0) {
+        blocks.push({
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: '_No insights yet. Upload and analyze a transcript to extract insights!_',
+          },
+        });
+      } else {
+        for (const insight of insights) {
+          const typeEmoji = getInsightTypeEmoji(insight.type);
+
+          blocks.push({
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `${typeEmoji} *${insight.title}*\n${insight.description}\n_From: ${insight.transcript.title}_`,
+            },
+            accessory: {
+              type: 'overflow',
+              options: [
+                {
+                  text: {
+                    type: 'plain_text',
+                    text: '📤 Export',
+                  },
+                  value: insight.id,
+                },
+                {
+                  text: {
+                    type: 'plain_text',
+                    text: '🗑️ Archive',
+                  },
+                  value: insight.id,
+                },
+              ],
+              action_id: `insight_menu_${insight.id}`,
+            },
+          });
+        }
       }
     }
 
@@ -171,5 +271,36 @@ function getStatusText(status: string): string {
       return 'Failed';
     default:
       return status;
+  }
+}
+
+function getInsightTypeEmoji(type: string): string {
+  switch (type) {
+    case 'pain':
+      return '😣';
+    case 'blocker':
+      return '🚫';
+    case 'feature_request':
+      return '✨';
+    case 'idea':
+      return '💡';
+    case 'gain':
+      return '🎯';
+    case 'outcome':
+      return '✅';
+    case 'objection':
+      return '⚠️';
+    case 'buying_signal':
+      return '💰';
+    case 'question':
+      return '❓';
+    case 'feedback':
+      return '💬';
+    case 'confusion':
+      return '😕';
+    case 'opportunity':
+      return '🚀';
+    default:
+      return '📌';
   }
 }
