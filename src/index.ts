@@ -56,9 +56,13 @@ const receiver = new ExpressReceiver({
   endpoints: '/slack/events',
 });
 
+// Configure Express to trust Railway's proxy
+receiver.app.set('trust proxy', true);
+
 export const slack = new App({
   token: process.env.SLACK_BOT_TOKEN,
   receiver,
+  logLevel: process.env.LOG_LEVEL === 'debug' ? 'DEBUG' : 'INFO',
 });
 
 // Health check endpoint
@@ -67,6 +71,21 @@ receiver.router.get('/health', (req, res) => {
     status: 'healthy',
     timestamp: new Date().toISOString(),
     version: '2.0.0',
+    slack: {
+      endpoint: '/slack/events',
+      configured: !!process.env.SLACK_BOT_TOKEN && !!process.env.SLACK_SIGNING_SECRET,
+    },
+  });
+});
+
+// Debug endpoint to test Slack configuration
+receiver.router.get('/debug/slack', (req, res) => {
+  res.json({
+    timestamp: new Date().toISOString(),
+    slack_bot_token: process.env.SLACK_BOT_TOKEN ? `${process.env.SLACK_BOT_TOKEN.substring(0, 10)}...` : 'NOT SET',
+    slack_signing_secret: process.env.SLACK_SIGNING_SECRET ? `${process.env.SLACK_SIGNING_SECRET.substring(0, 8)}...` : 'NOT SET',
+    endpoint: '/slack/events',
+    message: 'Slack Bolt should automatically handle challenge verification at POST /slack/events',
   });
 });
 
@@ -87,6 +106,12 @@ const PORT = process.env.PORT || 5000;
       logger.warn('⚠️  OPENAI_API_KEY not set');
     }
 
+    // Log Slack configuration
+    logger.info({
+      bot_token: process.env.SLACK_BOT_TOKEN ? `${process.env.SLACK_BOT_TOKEN.substring(0, 10)}...` : 'NOT SET',
+      signing_secret: process.env.SLACK_SIGNING_SECRET ? `${process.env.SLACK_SIGNING_SECRET.substring(0, 8)}...` : 'NOT SET',
+    }, '🔐 Slack credentials configured');
+
     // Register Slack handlers after exports are complete (avoid circular dependency)
     await import('./slack/handlers.js');
 
@@ -95,7 +120,9 @@ const PORT = process.env.PORT || 5000;
     logger.info(`⚡️ MeetyAI server running on port ${PORT}`);
     logger.info(`📊 Dual-AI processing: Claude Sonnet 4.5 + GPT-5`);
     logger.info(`🔗 Health check: http://localhost:${PORT}/health`);
-    logger.info(`🤖 Slack events: http://localhost:${PORT}/slack/events`);
+    logger.info(`🔗 Debug Slack: http://localhost:${PORT}/debug/slack`);
+    logger.info(`🤖 Slack events endpoint: POST http://localhost:${PORT}/slack/events`);
+    logger.info(`💡 Set Request URL in Slack App > Event Subscriptions to: https://[your-railway-domain]/slack/events`);
 
   } catch (error) {
     logger.error({ error }, '❌ Failed to start server');
