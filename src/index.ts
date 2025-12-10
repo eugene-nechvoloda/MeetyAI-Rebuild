@@ -51,48 +51,39 @@ prisma.$on('warn', (e: any) => {
   logger.warn('Prisma warning:', e);
 });
 
-// Initialize Slack Bolt with ExpressReceiver
+// Create custom Express app with challenge handler that runs BEFORE signature verification
+const customApp = express();
+customApp.set('trust proxy', true);
+
+// Add body parser for challenge requests (runs before ExpressReceiver's middleware)
+customApp.use(express.json());
+customApp.use(express.urlencoded({ extended: true }));
+
+// Explicit challenge handler - runs BEFORE Slack signature verification
+customApp.use('/slack/events', (req, res, next) => {
+  logger.info({
+    method: req.method,
+    path: req.path,
+    bodyType: typeof req.body,
+    hasChallenge: req.body?.challenge ? true : false,
+    type: req.body?.type,
+  }, '📨 Incoming Slack request (before signature verification)');
+
+  // Handle challenge immediately, bypassing signature verification
+  if (req.body && req.body.type === 'url_verification' && req.body.challenge) {
+    logger.info({ challenge: req.body.challenge }, '✅ URL verification challenge - responding immediately');
+    return res.json({ challenge: req.body.challenge });
+  }
+
+  // Pass other requests to Slack Bolt for signature verification
+  next();
+});
+
+// Initialize Slack Bolt with our custom Express app
 const receiver = new ExpressReceiver({
   signingSecret: process.env.SLACK_SIGNING_SECRET!,
   endpoints: '/slack/events',
-});
-
-// Configure Express to trust Railway's proxy
-receiver.app.set('trust proxy', true);
-
-// Add explicit challenge handler BEFORE Slack Bolt's signature verification
-receiver.app.post('/slack/events', (req, res, next) => {
-  // Log all incoming requests
-  logger.info({
-    method: req.method,
-    headers: {
-      'content-type': req.headers['content-type'],
-      'x-slack-signature': req.headers['x-slack-signature'] ? 'present' : 'missing',
-    },
-    rawBody: req.body ? 'present' : 'missing',
-  }, '📨 Slack POST request received');
-
-  // Try to parse body if it's a string (raw body from ExpressReceiver)
-  let body = req.body;
-  if (typeof req.body === 'string') {
-    try {
-      body = JSON.parse(req.body);
-    } catch (e) {
-      logger.error('Failed to parse body');
-    }
-  }
-
-  logger.info({ parsedBody: body }, '📦 Parsed body');
-
-  // Handle challenge verification explicitly
-  if (body && body.type === 'url_verification' && body.challenge) {
-    logger.info({ challenge: body.challenge }, '✅ Challenge detected - responding immediately');
-    res.setHeader('Content-Type', 'application/json');
-    return res.send(JSON.stringify({ challenge: body.challenge }));
-  }
-
-  // Pass to Slack Bolt for other requests
-  next();
+  app: customApp,
 });
 
 export const slack = new App({
