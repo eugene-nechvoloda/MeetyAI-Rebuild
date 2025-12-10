@@ -56,24 +56,10 @@ const receiver = new ExpressReceiver({
   endpoints: '/slack/events',
 });
 
-// Add request logging middleware
-receiver.router.use('/slack/events', (req, res, next) => {
-  logger.info({
-    method: req.method,
-    path: req.path,
-    body: req.body,
-    headers: {
-      'content-type': req.headers['content-type'],
-      'x-slack-signature': req.headers['x-slack-signature'] ? 'present' : 'missing',
-      'x-slack-request-timestamp': req.headers['x-slack-request-timestamp'],
-    },
-  }, '📨 Incoming Slack request');
-  next();
-});
-
 export const slack = new App({
   token: process.env.SLACK_BOT_TOKEN,
   receiver,
+  logLevel: process.env.LOG_LEVEL === 'debug' ? 'DEBUG' : 'INFO',
 });
 
 // Health check endpoint
@@ -89,12 +75,14 @@ receiver.router.get('/health', (req, res) => {
   });
 });
 
-// Slack endpoint test
-receiver.router.get('/slack/events', (req, res) => {
-  logger.info('GET request to /slack/events - Slack challenge endpoint');
+// Debug endpoint to test Slack configuration
+receiver.router.get('/debug/slack', (req, res) => {
   res.json({
-    status: 'ok',
-    message: 'Slack events endpoint is ready. POST requests will be handled by Slack Bolt.',
+    timestamp: new Date().toISOString(),
+    slack_bot_token: process.env.SLACK_BOT_TOKEN ? `${process.env.SLACK_BOT_TOKEN.substring(0, 10)}...` : 'NOT SET',
+    slack_signing_secret: process.env.SLACK_SIGNING_SECRET ? `${process.env.SLACK_SIGNING_SECRET.substring(0, 8)}...` : 'NOT SET',
+    endpoint: '/slack/events',
+    message: 'Slack Bolt should automatically handle challenge verification at POST /slack/events',
   });
 });
 
@@ -115,6 +103,12 @@ const PORT = process.env.PORT || 5000;
       logger.warn('⚠️  OPENAI_API_KEY not set');
     }
 
+    // Log Slack configuration
+    logger.info({
+      bot_token: process.env.SLACK_BOT_TOKEN ? `${process.env.SLACK_BOT_TOKEN.substring(0, 10)}...` : 'NOT SET',
+      signing_secret: process.env.SLACK_SIGNING_SECRET ? `${process.env.SLACK_SIGNING_SECRET.substring(0, 8)}...` : 'NOT SET',
+    }, '🔐 Slack credentials configured');
+
     // Register Slack handlers after exports are complete (avoid circular dependency)
     await import('./slack/handlers.js');
 
@@ -123,7 +117,9 @@ const PORT = process.env.PORT || 5000;
     logger.info(`⚡️ MeetyAI server running on port ${PORT}`);
     logger.info(`📊 Dual-AI processing: Claude Sonnet 4.5 + GPT-5`);
     logger.info(`🔗 Health check: http://localhost:${PORT}/health`);
-    logger.info(`🤖 Slack events: http://localhost:${PORT}/slack/events`);
+    logger.info(`🔗 Debug Slack: http://localhost:${PORT}/debug/slack`);
+    logger.info(`🤖 Slack events endpoint: POST http://localhost:${PORT}/slack/events`);
+    logger.info(`💡 Set Request URL in Slack App > Event Subscriptions to: https://[your-railway-domain]/slack/events`);
 
   } catch (error) {
     logger.error({ error }, '❌ Failed to start server');
