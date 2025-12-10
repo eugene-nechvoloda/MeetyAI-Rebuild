@@ -9,7 +9,6 @@ const { App, ExpressReceiver } = pkg;
 import { PrismaClient } from '@prisma/client';
 import pino from 'pino';
 import dotenv from 'dotenv';
-import express from 'express';
 
 // Load environment variables
 dotenv.config();
@@ -51,46 +50,23 @@ prisma.$on('warn', (e: any) => {
   logger.warn('Prisma warning:', e);
 });
 
-// Create custom Express app with challenge handler that runs BEFORE signature verification
-const customApp = express();
-customApp.set('trust proxy', true);
-
-// Add body parser for challenge requests (runs before ExpressReceiver's middleware)
-customApp.use(express.json());
-customApp.use(express.urlencoded({ extended: true }));
-
-// Explicit challenge handler - runs BEFORE Slack signature verification
-customApp.use('/slack/events', (req, res, next) => {
-  logger.info({
-    method: req.method,
-    path: req.path,
-    bodyType: typeof req.body,
-    hasChallenge: req.body?.challenge ? true : false,
-    type: req.body?.type,
-  }, '📨 Incoming Slack request (before signature verification)');
-
-  // Handle challenge immediately, bypassing signature verification
-  if (req.body && req.body.type === 'url_verification' && req.body.challenge) {
-    logger.info({ challenge: req.body.challenge }, '✅ URL verification challenge - responding with plain string');
-    // Slack expects the challenge as a plain string, not JSON
-    return res.status(200).send(req.body.challenge);
-  }
-
-  // Pass other requests to Slack Bolt for signature verification
-  next();
-});
-
-// Initialize Slack Bolt with our custom Express app
+// Initialize Slack Bolt with ExpressReceiver
+// ExpressReceiver automatically handles:
+// - URL verification challenges (responds with {"challenge": "..."})
+// - SSL checks
+// - Signature verification
+// - Body parsing
 const receiver = new ExpressReceiver({
   signingSecret: process.env.SLACK_SIGNING_SECRET!,
   endpoints: '/slack/events',
-  app: customApp,
 });
+
+// Configure Express to trust Railway's proxy for correct IP/protocol detection
+receiver.app.set('trust proxy', true);
 
 export const slack = new App({
   token: process.env.SLACK_BOT_TOKEN,
   receiver,
-  logLevel: process.env.LOG_LEVEL === 'debug' ? 'DEBUG' : 'INFO',
 });
 
 // Health check endpoint
