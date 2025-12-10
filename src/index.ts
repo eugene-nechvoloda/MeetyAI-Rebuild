@@ -71,8 +71,9 @@ customApp.use('/slack/events', (req, res, next) => {
 
   // Handle challenge immediately, bypassing signature verification
   if (req.body && req.body.type === 'url_verification' && req.body.challenge) {
-    logger.info({ challenge: req.body.challenge }, '✅ URL verification challenge - responding immediately');
-    return res.json({ challenge: req.body.challenge });
+    logger.info({ challenge: req.body.challenge }, '✅ URL verification challenge - responding with plain string');
+    // Slack expects the challenge as a plain string, not JSON
+    return res.status(200).send(req.body.challenge);
   }
 
   // Pass other requests to Slack Bolt for signature verification
