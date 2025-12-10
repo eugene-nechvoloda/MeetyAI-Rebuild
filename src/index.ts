@@ -160,6 +160,17 @@ const PORT = process.env.PORT || 5000;
   }
 })();
 
+// Global error handlers
+process.on('unhandledRejection', (reason, promise) => {
+  logger.error({ reason, promise }, '❌ Unhandled Promise Rejection');
+  // Don't exit - let the app continue running
+});
+
+process.on('uncaughtException', (error) => {
+  logger.error({ error }, '❌ Uncaught Exception');
+  // Don't exit immediately - log and continue
+});
+
 // Graceful shutdown
 process.on('SIGTERM', async () => {
   logger.info('SIGTERM received, shutting down gracefully');
