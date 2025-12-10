@@ -11,14 +11,33 @@ import { TranscriptStatus } from '@prisma/client';
 import { logger, prisma, slack } from '../index.js';
 import crypto from 'crypto';
 
-// Initialize AI clients
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-});
+// Initialize AI clients lazily to allow app to start even if keys are missing
+let anthropic: Anthropic | null = null;
+let openai: OpenAI | null = null;
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
+function getAnthropicClient(): Anthropic {
+  if (!anthropic) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error('ANTHROPIC_API_KEY is not configured');
+    }
+    anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+  }
+  return anthropic;
+}
+
+function getOpenAIClient(): OpenAI {
+  if (!openai) {
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY is not configured');
+    }
+    openai = new OpenAI({
+      apiKey: process.env.OPENAI_API_KEY,
+    });
+  }
+  return openai;
+}
 
 // Hardcoded for MVP
 const RESEARCH_DEPTH = 0.7;
@@ -161,7 +180,7 @@ Return JSON only:
   "reasoning": "Brief explanation"
 }`;
 
-  const response = await anthropic.messages.create({
+  const response = await getAnthropicClient().messages.create({
     model: CLAUDE_MODEL,
     max_tokens: 1024,
     temperature: 0.3,
@@ -234,7 +253,7 @@ Extract approximately ${Math.floor(RESEARCH_DEPTH * 10)} insights per hour of co
 Be thorough but avoid duplicates.
 Focus on actionable insights.`;
 
-    const response = await anthropic.messages.create({
+    const response = await getAnthropicClient().messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 8192,
       temperature: TEMPERATURE,
@@ -300,7 +319,7 @@ Return JSON only:
   ]
 }`;
 
-  const response = await openai.chat.completions.create({
+  const response = await getOpenAIClient().chat.completions.create({
     model: GPT_MODEL,
     messages: [
       { role: 'system', content: systemPrompt },
