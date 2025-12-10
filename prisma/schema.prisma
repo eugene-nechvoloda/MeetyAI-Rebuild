@@ -1,0 +1,276 @@
+// MeetyAI Rebuild Database Schema
+// Simplified for MVP with dual-AI processing
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Core transcript entity
+model Transcript {
+  id                String              @id @default(uuid())
+  title             String
+  origin            TranscriptOrigin
+  status            TranscriptStatus    @default(file_uploaded)
+
+  // Slack metadata
+  slack_user_id     String
+  slack_channel_id  String
+  slack_message_ts  String?
+  slack_thread_ts   String?
+
+  // Content
+  raw_content       String?             @db.Text
+  transcript_text   String?             @db.Text
+  content_hash      String?
+  language          String              @default("en")
+  translated        Boolean             @default(false)
+
+  // Context classification
+  context_theme     String?
+  context_confidence Float?
+
+  // Origin-specific metadata
+  file_name         String?
+  file_type         String?
+  link_url          String?
+  zoom_meeting_id   String?
+  fireflies_id      String?
+
+  // Processing metadata
+  duration_minutes  Int?
+  participant_count Int?
+  processing_time   Int?
+
+  // Timestamps
+  created_at        DateTime            @default(now())
+  updated_at        DateTime            @updatedAt
+  processed_at      DateTime?
+
+  // Archive
+  archived          Boolean             @default(false)
+  archived_at       DateTime?
+
+  // Relations
+  insights          Insight[]
+  activities        TranscriptActivity[]
+
+  @@index([slack_user_id])
+  @@index([status])
+  @@index([origin])
+  @@index([created_at])
+  @@index([content_hash])
+  @@index([archived])
+}
+
+enum TranscriptOrigin {
+  file_upload
+  paste
+  link
+  zoom_import
+  fireflies_import
+  custom_api
+}
+
+enum TranscriptStatus {
+  file_uploaded
+  transcribing
+  translating
+  analyzing_pass_1
+  analyzing_pass_2
+  analyzing_pass_3
+  analyzing_pass_4
+  compiling_insights
+  completed
+  failed
+}
+
+// Extracted insights
+model Insight {
+  id                String          @id @default(uuid())
+  transcript_id     String
+  transcript        Transcript      @relation(fields: [transcript_id], references: [id], onDelete: Cascade)
+
+  // Content
+  title             String
+  description       String          @db.Text
+  type              InsightType
+  category          String?
+
+  // Evidence
+  author            String?
+  evidence_text     String?         @db.Text
+  evidence_quotes   Json
+  confidence        Float
+
+  // Deduplication
+  content_hash      String?
+  is_duplicate      Boolean         @default(false)
+  duplicate_of_id   String?
+  duplicate_similarity Float?
+
+  // Metadata
+  timestamp_start   String?
+  timestamp_end     String?
+  speaker           String?
+
+  // Status and export
+  status            InsightStatus   @default(new)
+  approved          Boolean         @default(false)
+  approved_at       DateTime?
+  exported          Boolean         @default(false)
+  export_destinations Json?
+
+  // Archive
+  archived          Boolean         @default(false)
+  archived_at       DateTime?
+
+  // Timestamps
+  created_at        DateTime        @default(now())
+  updated_at        DateTime        @updatedAt
+
+  @@index([transcript_id])
+  @@index([type])
+  @@index([status])
+  @@index([approved])
+  @@index([is_duplicate])
+  @@index([archived])
+}
+
+enum InsightType {
+  pain
+  blocker
+  feature_request
+  idea
+  gain
+  outcome
+  objection
+  buying_signal
+  question
+  feedback
+  confusion
+  opportunity
+  insight
+  other
+}
+
+enum InsightStatus {
+  new
+  exported
+  export_failed
+  archived
+}
+
+// Activity log for transcripts
+model TranscriptActivity {
+  id             String      @id @default(uuid())
+  transcript_id  String
+  transcript     Transcript  @relation(fields: [transcript_id], references: [id], onDelete: Cascade)
+
+  activity_type  String
+  message        String
+  metadata       Json?
+
+  created_at     DateTime    @default(now())
+
+  @@index([transcript_id])
+  @@index([created_at])
+}
+
+// Import source configurations
+model ImportSource {
+  id          String    @id @default(uuid())
+  user_id     String
+
+  provider    String
+  label       String
+  enabled     Boolean   @default(true)
+
+  // API configuration
+  api_endpoint          String
+  api_key_encrypted     String?
+  api_secret_encrypted  String?
+  oauth_token_encrypted String?
+  auth_type             String
+
+  // Schedule
+  schedule    String    @default("0 * * * *")
+  next_run_at DateTime?
+
+  // Status
+  last_run_at     DateTime?
+  last_run_status String?
+  last_run_error  String?   @db.Text
+  last_run_count  Int?
+
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  @@index([user_id])
+  @@index([provider])
+  @@index([enabled])
+  @@index([next_run_at])
+}
+
+// Export destination configurations
+model ExportConfig {
+  id          String    @id @default(uuid())
+  user_id     String
+
+  provider    String
+  label       String
+  enabled     Boolean   @default(true)
+
+  // Authentication
+  api_key_encrypted     String
+  api_secret_encrypted  String?
+  oauth_token_encrypted String?
+  auth_type             String
+
+  // Destination configuration
+  base_id       String?
+  table_name    String?
+  team_id       String?
+  project_id    String?
+  database_id   String?
+  sheet_id      String?
+  workspace_id  String?
+  api_endpoint  String?
+
+  // Field mapping
+  field_mapping   Json
+  available_fields Json?
+
+  // Status
+  connection_tested Boolean   @default(false)
+  test_status       String?
+  test_error        String?   @db.Text
+  last_export_at    DateTime?
+  last_export_count Int?
+  total_exported    Int       @default(0)
+
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+
+  @@index([user_id])
+  @@index([provider])
+  @@index([enabled])
+}
+
+// User settings and preferences
+model UserSetting {
+  id          String    @id @default(uuid())
+  user_id     String    @unique
+
+  notify_on_completion Boolean @default(true)
+  notify_on_failure    Boolean @default(true)
+  custom_context       String? @db.Text
+  insight_examples     String? @db.Text
+
+  created_at  DateTime  @default(now())
+  updated_at  DateTime  @updatedAt
+}
