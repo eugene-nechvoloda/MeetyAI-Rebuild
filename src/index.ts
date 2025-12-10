@@ -70,9 +70,6 @@ receiver.router.get('/health', (req, res) => {
   });
 });
 
-// Register Slack handlers
-import './slack/handlers.js';
-
 // Start server
 const PORT = process.env.PORT || 5000;
 
@@ -89,6 +86,9 @@ const PORT = process.env.PORT || 5000;
     if (!process.env.OPENAI_API_KEY) {
       logger.warn('⚠️  OPENAI_API_KEY not set');
     }
+
+    // Register Slack handlers after exports are complete (avoid circular dependency)
+    await import('./slack/handlers.js');
 
     // Start server
     await slack.start(PORT);
