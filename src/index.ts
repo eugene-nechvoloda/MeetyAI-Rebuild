@@ -64,6 +64,29 @@ const receiver = new ExpressReceiver({
 // Configure Express to trust Railway's proxy for correct IP/protocol detection
 receiver.app.set('trust proxy', true);
 
+// Add raw body logging BEFORE Slack Bolt processes requests
+receiver.app.use('/slack/events', (req, res, next) => {
+  // Capture raw body for logging
+  let rawBody = '';
+  req.on('data', (chunk) => {
+    rawBody += chunk.toString();
+  });
+  req.on('end', () => {
+    logger.info({
+      method: req.method,
+      path: req.path,
+      headers: {
+        'content-type': req.headers['content-type'],
+        'x-slack-signature': req.headers['x-slack-signature'] ? 'present' : 'missing',
+        'x-slack-request-timestamp': req.headers['x-slack-request-timestamp'],
+      },
+      rawBody: rawBody,
+      bodyLength: rawBody.length,
+    }, '📨 RAW Slack request received');
+  });
+  next();
+});
+
 export const slack = new App({
   token: process.env.SLACK_BOT_TOKEN,
   receiver,
