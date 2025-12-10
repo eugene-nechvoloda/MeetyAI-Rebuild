@@ -21,6 +21,34 @@ export async function buildHomeTab(userId: string) {
       },
     });
 
+    // Get insights stats
+    const totalInsights = await prisma.insight.count({
+      where: {
+        transcript: {
+          slack_user_id: userId,
+        },
+      },
+    });
+
+    const newInsights = await prisma.insight.count({
+      where: {
+        transcript: {
+          slack_user_id: userId,
+        },
+        exported: false,
+        archived: false,
+      },
+    });
+
+    const exportedInsights = await prisma.insight.count({
+      where: {
+        transcript: {
+          slack_user_id: userId,
+        },
+        exported: true,
+      },
+    });
+
     const blocks: any[] = [
       {
         type: 'header',
@@ -41,6 +69,16 @@ export async function buildHomeTab(userId: string) {
         type: 'divider',
       },
       {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: `📊 *${transcripts.length}* transcripts analyzed  •  💡 *${totalInsights}* insights extracted  •  ✅ *${newInsights}* ready to export`,
+        },
+      },
+      {
+        type: 'divider',
+      },
+      {
         type: 'actions',
         elements: [
           {
@@ -52,6 +90,15 @@ export async function buildHomeTab(userId: string) {
             },
             style: 'primary',
             action_id: 'upload_transcript_button',
+          },
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '⚙️ Settings',
+              emoji: true,
+            },
+            action_id: 'open_settings_button',
           },
         ],
       },
