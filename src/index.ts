@@ -56,6 +56,9 @@ const receiver = new ExpressReceiver({
   endpoints: '/slack/events',
 });
 
+// Configure Express to trust Railway's proxy
+receiver.app.set('trust proxy', true);
+
 export const slack = new App({
   token: process.env.SLACK_BOT_TOKEN,
   receiver,
