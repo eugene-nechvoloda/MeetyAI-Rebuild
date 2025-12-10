@@ -51,37 +51,39 @@ prisma.$on('warn', (e: any) => {
   logger.warn('Prisma warning:', e);
 });
 
-// Initialize Slack Bolt with ExpressReceiver
-const receiver = new ExpressReceiver({
-  signingSecret: process.env.SLACK_SIGNING_SECRET!,
-  endpoints: '/slack/events',
-});
+// Create custom Express app with challenge handler that runs BEFORE signature verification
+const customApp = express();
+customApp.set('trust proxy', true);
 
-// Configure Express to trust Railway's proxy
-receiver.app.set('trust proxy', true);
+// Add body parser for challenge requests (runs before ExpressReceiver's middleware)
+customApp.use(express.json());
+customApp.use(express.urlencoded({ extended: true }));
 
-// Add body parser middleware for challenge verification
-receiver.app.use('/slack/events', express.json());
-
-// Add explicit challenge handler BEFORE Slack Bolt processes the request
-receiver.app.use('/slack/events', (req, res, next) => {
-  // Log all incoming requests
+// Explicit challenge handler - runs BEFORE Slack signature verification
+customApp.use('/slack/events', (req, res, next) => {
   logger.info({
     method: req.method,
     path: req.path,
-    body: req.body,
-    challenge: req.body?.challenge,
+    bodyType: typeof req.body,
+    hasChallenge: req.body?.challenge ? true : false,
     type: req.body?.type,
-  }, '📨 Slack events request received');
+  }, '📨 Incoming Slack request (before signature verification)');
 
-  // Handle challenge verification explicitly
+  // Handle challenge immediately, bypassing signature verification
   if (req.body && req.body.type === 'url_verification' && req.body.challenge) {
-    logger.info({ challenge: req.body.challenge }, '✅ Challenge request detected - responding');
+    logger.info({ challenge: req.body.challenge }, '✅ URL verification challenge - responding immediately');
     return res.json({ challenge: req.body.challenge });
   }
 
-  // Pass to Slack Bolt for other requests
+  // Pass other requests to Slack Bolt for signature verification
   next();
+});
+
+// Initialize Slack Bolt with our custom Express app
+const receiver = new ExpressReceiver({
+  signingSecret: process.env.SLACK_SIGNING_SECRET!,
+  endpoints: '/slack/events',
+  app: customApp,
 });
 
 export const slack = new App({
