@@ -239,7 +239,7 @@ async function exportToAirtable(apiKey: string, baseId: string, tableName: strin
       return { success: false, error: `Airtable API error: ${response.status} - ${error}` };
     }
 
-    const result = await response.json();
+    const result = await response.json() as { id: string };
     return { success: true, recordId: result.id };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
@@ -263,7 +263,7 @@ async function testLinearConnection(apiKey: string, teamId: string): Promise<{ s
       return { success: false, error: `Linear API error: ${response.status}` };
     }
 
-    const result = await response.json();
+    const result = await response.json() as { errors?: Array<{ message: string }> };
     if (result.errors) {
       return { success: false, error: result.errors[0].message };
     }
@@ -311,12 +311,15 @@ async function exportToLinear(apiKey: string, teamId: string, projectId: string 
       return { success: false, error: `Linear API error: ${response.status}` };
     }
 
-    const result = await response.json();
+    const result = await response.json() as {
+      errors?: Array<{ message: string }>;
+      data?: { issueCreate: { issue: { identifier: string } } };
+    };
     if (result.errors) {
       return { success: false, error: result.errors[0].message };
     }
 
-    return { success: true, recordId: result.data.issueCreate.issue.identifier };
+    return { success: true, recordId: result.data?.issueCreate?.issue?.identifier };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }

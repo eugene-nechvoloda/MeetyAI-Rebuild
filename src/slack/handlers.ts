@@ -273,14 +273,14 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
     // Test connection first
     const { testExportConnection, createExportConfig } = await import('../services/exportService.js');
 
-    // Create temporary config for testing
+    // Create temporary config for testing (non-null asserted after validation above)
     const tempConfigId = await createExportConfig({
       userId,
       provider: 'airtable',
-      label,
-      apiKey,
-      baseId,
-      tableName,
+      label: label!,
+      apiKey: apiKey!,
+      baseId: baseId!,
+      tableName: tableName!,
       fieldMapping: {}, // Will be set in field mapping step
     });
 
@@ -352,12 +352,13 @@ slack.view('configure_linear_export', async ({ ack, body, client, view }) => {
   try {
     const { testExportConnection, createExportConfig } = await import('../services/exportService.js');
 
+    // Non-null asserted after validation above
     const tempConfigId = await createExportConfig({
       userId,
       provider: 'linear',
-      label,
-      apiKey,
-      teamId,
+      label: label!,
+      apiKey: apiKey!,
+      teamId: teamId!,
       projectId: projectId || undefined,
       fieldMapping: {},
     });
