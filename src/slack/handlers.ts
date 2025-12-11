@@ -253,14 +253,15 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
   const tableName = values.table_name_block.table_name_input.value;
 
   if (!label || !apiKey || !baseId || !tableName) {
+    const errors: Record<string, string> = {};
+    if (!label) errors.label_block = 'Label is required';
+    if (!apiKey) errors.api_key_block = 'API key is required';
+    if (!baseId) errors.base_id_block = 'Base ID is required';
+    if (!tableName) errors.table_name_block = 'Table name is required';
+
     await ack({
       response_action: 'errors',
-      errors: {
-        label_block: !label ? 'Label is required' : undefined,
-        api_key_block: !apiKey ? 'API key is required' : undefined,
-        base_id_block: !baseId ? 'Base ID is required' : undefined,
-        table_name_block: !tableName ? 'Table name is required' : undefined,
-      },
+      errors,
     });
     return;
   }
@@ -334,13 +335,14 @@ slack.view('configure_linear_export', async ({ ack, body, client, view }) => {
   const projectId = values.project_id_block.project_id_input.value;
 
   if (!label || !apiKey || !teamId) {
+    const errors: Record<string, string> = {};
+    if (!label) errors.label_block = 'Label is required';
+    if (!apiKey) errors.api_key_block = 'API key is required';
+    if (!teamId) errors.team_id_block = 'Team ID is required';
+
     await ack({
       response_action: 'errors',
-      errors: {
-        label_block: !label ? 'Label is required' : undefined,
-        api_key_block: !apiKey ? 'API key is required' : undefined,
-        team_id_block: !teamId ? 'Team ID is required' : undefined,
-      },
+      errors,
     });
     return;
   }
