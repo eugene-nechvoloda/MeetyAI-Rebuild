@@ -153,4 +153,36 @@ slack.action('switch_to_insights', async ({ ack, client, body }) => {
   }
 });
 
+// Add Import Source button (from Settings modal)
+slack.action('add_import_source', async ({ ack, client, body }) => {
+  try {
+    await ack();
+    logger.info('📥 Add Import Source clicked');
+
+    // For now, send a message that this feature is coming soon
+    await client.chat.postMessage({
+      channel: (body as any).user.id,
+      text: '📥 Add Import Source feature coming soon!\n\nYou\'ll be able to configure:\n• Zoom\n• Google Meet\n• Fireflies\n• Custom API\n\nWith automated import on a schedule.',
+    });
+  } catch (error) {
+    logger.error({ error }, '❌ Error handling add import source');
+  }
+});
+
+// Add Export Destination button (from Settings modal)
+slack.action('add_export_destination', async ({ ack, client, body }) => {
+  try {
+    await ack();
+    logger.info('📤 Add Export Destination clicked');
+
+    // For now, send a message that this feature is coming soon
+    await client.chat.postMessage({
+      channel: (body as any).user.id,
+      text: '📤 Add Export Destination feature coming soon!\n\nYou\'ll be able to configure:\n• Airtable (with field mapping)\n• Linear\n• Notion\n• Jira\n• Google Sheets\n\nWith custom field mapping like Zapier.',
+    });
+  } catch (error) {
+    logger.error({ error }, '❌ Error handling add export destination');
+  }
+});
+
 logger.info('✅ Slack handlers registered');
