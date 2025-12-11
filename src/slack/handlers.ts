@@ -9,6 +9,17 @@ import { buildHomeTab } from './views/appHome.js';
 import { handleUploadModal } from './modals/uploadTranscript.js';
 import { processTranscript } from '../services/transcriptProcessor.js';
 import { prisma } from '../index.js';
+import {
+  buildExportProviderSelectionModal,
+  buildAirtableConfigModal,
+  buildLinearConfigModal,
+  buildFieldMappingModal,
+} from './views/exportModals.js';
+import {
+  testExportConnection,
+  createExportConfig,
+  exportInsight,
+} from '../services/exportService.js';
 
 // App Home opened
 slack.event('app_home_opened', async ({ event, client }) => {
@@ -197,7 +208,6 @@ slack.action('add_export_destination', async ({ ack, client, body }) => {
     await ack();
     logger.info('📤 Add Export Destination clicked');
 
-    const { buildExportProviderSelectionModal } = await import('./views/exportModals.js');
     await client.views.push({
       trigger_id: (body as any).trigger_id,
       view: buildExportProviderSelectionModal() as any,
@@ -220,8 +230,6 @@ slack.view('select_export_provider', async ({ ack, body, client, view }) => {
   logger.info({ provider }, '📤 Export provider selected');
 
   // Show provider-specific configuration modal
-  const { buildAirtableConfigModal, buildLinearConfigModal } = await import('./views/exportModals.js');
-
   let configModal;
   switch (provider) {
     case 'airtable':
@@ -273,9 +281,6 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
   logger.info({ userId, provider: 'airtable' }, '⚙️ Configuring Airtable export');
 
   try {
-    // Show field mapping modal
-    const { buildFieldMappingModal } = await import('./views/exportModals.js');
-
     // Mock destination fields for MVP (in production, fetch from Airtable API)
     const destinationFields = [
       { text: { type: 'plain_text', text: 'Title' }, value: 'Title' },
@@ -337,41 +342,37 @@ slack.view('configure_linear_export', async ({ ack, body, client, view }) => {
     return;
   }
 
-  await ack();
-
   logger.info({ userId, provider: 'linear' }, '⚙️ Configuring Linear export');
 
   try {
-    const { testExportConnection, createExportConfig } = await import('../services/exportService.js');
+    // Mock destination fields for MVP
+    const destinationFields = [
+      { text: { type: 'plain_text', text: 'Title' }, value: 'Title' },
+      { text: { type: 'plain_text', text: 'Description' }, value: 'Description' },
+      { text: { type: 'plain_text', text: 'Priority' }, value: 'Priority' },
+      { text: { type: 'plain_text', text: 'Label' }, value: 'Label' },
+      { text: { type: 'plain_text', text: 'Status' }, value: 'Status' },
+    ];
 
-    // Non-null asserted after validation above
-    const tempConfigId = await createExportConfig({
+    // Store config data in private_metadata (create actual DB record after field mapping)
+    const configData = {
       userId,
       provider: 'linear',
       label: label!,
       apiKey: apiKey!,
       teamId: teamId!,
       projectId: projectId || undefined,
-      fieldMapping: {},
-    });
+    };
 
-    const testResult = await testExportConnection(tempConfigId);
-
-    if (!testResult.success) {
-      await client.chat.postMessage({
-        channel: userId,
-        text: `❌ Failed to connect to Linear: ${testResult.error}`,
-      });
-      return;
-    }
-
-    await client.chat.postMessage({
-      channel: userId,
-      text: `✅ Linear export configured successfully!\n\n*${label}* is now ready to receive insights.`,
+    // Push field mapping modal - must ack within 3 seconds!
+    await ack({
+      response_action: 'push',
+      view: buildFieldMappingModal('linear', [], destinationFields, JSON.stringify(configData)) as any,
     });
 
   } catch (error) {
     logger.error({ error }, '❌ Error configuring Linear export');
+    await ack();
     await client.chat.postMessage({
       channel: userId,
       text: `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -405,8 +406,6 @@ slack.view('map_export_fields', async ({ ack, body, client, view }) => {
     logger.info({ configData }, '📥 Parsed config data from private_metadata');
 
     // Create ExportConfig database record with field mapping
-    const { createExportConfig, testExportConnection } = await import('../services/exportService.js');
-
     const configId = await createExportConfig({
       userId: configData.userId,
       provider: configData.provider,
@@ -414,6 +413,8 @@ slack.view('map_export_fields', async ({ ack, body, client, view }) => {
       apiKey: configData.apiKey,
       baseId: configData.baseId,
       tableName: configData.tableName,
+      teamId: configData.teamId,
+      projectId: configData.projectId,
       fieldMapping,
     });
 
@@ -478,7 +479,6 @@ slack.action(/^insight_menu_.*/, async ({ ack, action, body, client }) => {
       text: `🔄 Exporting insight to ${config.label}...`,
     });
 
-    const { exportInsight } = await import('../services/exportService.js');
     const result = await exportInsight(insightId, config.id);
 
     if (result.success) {
@@ -504,7 +504,6 @@ slack.action(/^insight_menu_.*/, async ({ ack, action, body, client }) => {
     });
 
     // Refresh App Home
-    const { buildHomeTab } = await import('./views/appHome.js');
     const view = await buildHomeTab(userId, 'insights');
     await client.views.publish({
       user_id: userId,
