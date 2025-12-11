@@ -98,19 +98,22 @@ slack.action('upload_transcript_button', async ({ body, ack, client }) => {
   }
 });
 
-// Settings button - placeholder for now
+// Settings button - opens settings modal
 slack.action('open_settings_button', async ({ ack, client, body }) => {
   try {
     await ack();
     logger.info('⚙️ Settings button clicked');
 
-    // For now, send a message that settings are coming soon
-    await client.chat.postMessage({
-      channel: (body as any).user.id,
-      text: '⚙️ Settings feature coming soon! You\'ll be able to configure:\n• AI models\n• Import sources\n• Export destinations\n• Custom context and examples',
+    const { buildSettingsModal } = await import('./views/settingsModal.js');
+
+    await client.views.open({
+      trigger_id: (body as any).trigger_id,
+      view: buildSettingsModal() as any,
     });
+
+    logger.info('✅ Settings modal opened successfully');
   } catch (error) {
-    logger.error({ error }, '❌ Error handling settings button');
+    logger.error({ error }, '❌ Error opening settings modal');
   }
 });
 
