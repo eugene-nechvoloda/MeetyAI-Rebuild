@@ -2,7 +2,7 @@
  * Dual-AI Transcript Processor
  *
  * Stage 1: Claude Sonnet 4.5 - Analysis (extracts raw insights)
- * Stage 2: GPT-5 - Writing (crafts polished titles and descriptions)
+ * Stage 2: GPT-4o - Writing (crafts polished titles and descriptions)
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -168,6 +168,14 @@ export async function processTranscript(transcriptId: string): Promise<void> {
 }
 
 /**
+ * Utility: Strip markdown code blocks from JSON responses
+ */
+function stripMarkdownCodeBlocks(text: string): string {
+  // Remove ```json ... ``` or ``` ... ``` wrappers
+  return text.replace(/^```(?:json)?\n?/gm, '').replace(/\n?```$/gm, '').trim();
+}
+
+/**
  * Step 1: Classify transcript context
  */
 async function classifyContext(text: string): Promise<{ context: string; confidence: number }> {
@@ -201,7 +209,8 @@ Return JSON only:
 
   const content = response.content[0];
   if (content.type === 'text') {
-    const result = JSON.parse(content.text);
+    const cleanedText = stripMarkdownCodeBlocks(content.text);
+    const result = JSON.parse(cleanedText);
     return { context: result.context, confidence: result.confidence };
   }
 
@@ -276,7 +285,8 @@ Focus on actionable insights.`;
     const content = response.content[0];
     if (content.type === 'text') {
       try {
-        const result = JSON.parse(content.text);
+        const cleanedText = stripMarkdownCodeBlocks(content.text);
+        const result = JSON.parse(cleanedText);
         allInsights.push(...result.raw_insights);
         logger.info(`✅ Pass ${passInfo.pass} extracted ${result.raw_insights.length} insights`);
       } catch (e) {
@@ -289,14 +299,14 @@ Focus on actionable insights.`;
 }
 
 /**
- * Step 6: Refine insights with GPT-5
+ * Step 6: Refine insights with GPT-4o
  */
 async function refineInsights(
   rawInsights: any[],
   customContext: string,
   insightExamples: string
 ): Promise<any[]> {
-  logger.info(`✍️ Refining ${rawInsights.length} insights with GPT-5`);
+  logger.info(`✍️ Refining ${rawInsights.length} insights with GPT-4o`);
 
   const systemPrompt = `You are MeetyAI Writing Engine. Your task is to write clear, actionable insight titles and descriptions.
 
@@ -342,10 +352,11 @@ Return JSON only:
   const content = response.choices[0].message.content;
   if (content) {
     try {
-      const result = JSON.parse(content);
+      const cleanedText = stripMarkdownCodeBlocks(content);
+      const result = JSON.parse(cleanedText);
       return result.insights;
     } catch (e) {
-      logger.error({ error: e }, '❌ Failed to parse GPT-5 response');
+      logger.error({ error: e }, '❌ Failed to parse GPT-4o response');
       return rawInsights; // Fallback to raw insights
     }
   }
