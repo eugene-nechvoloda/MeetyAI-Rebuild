@@ -333,7 +333,7 @@ async function checkForDuplicate(newRecord: any, existingRecords: Array<{ id: st
       .map(([key, value]) => `  ${key}: ${value}`)
       .join('\n');
 
-    const prompt = `You are analyzing whether a new insight is a duplicate of existing records in Airtable.
+    const prompt = `You are analyzing whether a new insight is a TRUE DUPLICATE of existing records in Airtable.
 
 NEW INSIGHT TO BE ADDED:
 ${newRecordText}
@@ -341,23 +341,36 @@ ${newRecordText}
 EXISTING RECORDS IN AIRTABLE:
 ${existingRecordsText}
 
-Your task is to determine if the new insight is a duplicate of any existing record. Consider:
-- Title similarity (even if worded differently)
-- Description/content similarity
-- Quote/evidence text
-- Speaker/author attribution
-- Overall semantic meaning and context
+CRITICAL: Be VERY STRICT about duplicates. An insight is ONLY a duplicate if ALL of these conditions are met:
 
-Two insights are duplicates if they represent the SAME finding, even if:
-- Titles are worded differently
-- Descriptions have minor variations
-- They were extracted from different parts of the conversation
+1. **SAME SPEAKER/AUTHOR**: The speaker/author field must match exactly or be clearly the same person
+2. **SAME SOURCE/COMPANY**: Must be from the same company/organization/conversation
+3. **SAME SPECIFIC INSIGHT**: Must be the exact same finding, just reworded slightly
+4. **SAME EVIDENCE/QUOTE**: The quote or evidence should reference the same statement or context
+
+DO NOT mark as duplicate if:
+- Different speakers are talking about similar topics (e.g., "John from Acme complaining about onboarding" vs "Sarah from Beta complaining about onboarding" = NOT DUPLICATES, export both!)
+- Same speaker but different specific issues (e.g., "slow onboarding" vs "missing features" = NOT DUPLICATES)
+- Similar themes but different contexts or details
+- Different companies/sources discussing the same general problem
+
+EXAMPLES OF TRUE DUPLICATES (should skip):
+- Record 1: Speaker="John Smith, Acme Corp", Quote="Our onboarding takes 3 days which is too long"
+- Record 2: Speaker="John Smith, Acme", Quote="The onboarding process is taking us about 3 days"
+→ DUPLICATE (same person, same company, same specific issue, just reworded)
+
+EXAMPLES OF NOT DUPLICATES (should export both):
+- Record 1: Speaker="John, Acme Corp", Quote="Onboarding is too slow"
+- Record 2: Speaker="Sarah, Beta Inc", Quote="Our onboarding process is slow too"
+→ NOT DUPLICATE (different speakers, different companies, even if similar topic)
+
+Only mark as duplicate if you are HIGHLY CONFIDENT (>95%) that it's the exact same insight from the same person/source.
 
 Respond in JSON format:
 {
   "isDuplicate": true/false,
   "matchedRecordId": "record ID if duplicate, null otherwise",
-  "explanation": "brief explanation of your decision"
+  "explanation": "brief explanation focusing on speaker/source comparison"
 }`;
 
     const response = await anthropic.messages.create({
