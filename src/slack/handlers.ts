@@ -49,7 +49,8 @@ slack.action(/^transcript_menu_/, async ({ body, ack, client, action }) => {
     if (selectedOption.text.text.includes('Re-analyze')) {
       // Trigger re-analysis
       processTranscript(transcriptId).catch(error => {
-        logger.error(`Re-analysis failed for ${transcriptId}:`, error);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error({ error: errorMessage, transcriptId }, `Re-analysis failed for ${transcriptId}: ${errorMessage}`);
       });
 
       await client.chat.postMessage({
@@ -159,13 +160,34 @@ slack.action('add_import_source', async ({ ack, client, body }) => {
     await ack();
     logger.info('📥 Add Import Source clicked');
 
-    // For now, send a message that this feature is coming soon
-    await client.chat.postMessage({
-      channel: (body as any).user.id,
-      text: '📥 Add Import Source feature coming soon!\n\nYou\'ll be able to configure:\n• Zoom\n• Google Meet\n• Fireflies\n• Custom API\n\nWith automated import on a schedule.',
+    // Push a new modal view showing "coming soon"
+    await client.views.push({
+      trigger_id: (body as any).trigger_id,
+      view: {
+        type: 'modal',
+        title: { type: 'plain_text', text: 'Add Import Source' },
+        close: { type: 'plain_text', text: 'Close' },
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '🚧 *Coming Soon!*\n\nYou\'ll be able to automatically import transcripts from:',
+            },
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '• *Zoom* - Auto-import meeting recordings\n• *Google Meet* - Sync from Google Calendar\n• *Fireflies.ai* - Pull completed transcripts\n• *Custom API* - Webhook integration\n\nStay tuned! 🎉',
+            },
+          },
+        ],
+      },
     });
+    logger.info('✅ Import source modal pushed');
   } catch (error) {
-    logger.error({ error }, '❌ Error handling add import source');
+    logger.error({ error: error instanceof Error ? error.message : String(error) }, '❌ Error handling add import source');
   }
 });
 
@@ -175,13 +197,34 @@ slack.action('add_export_destination', async ({ ack, client, body }) => {
     await ack();
     logger.info('📤 Add Export Destination clicked');
 
-    // For now, send a message that this feature is coming soon
-    await client.chat.postMessage({
-      channel: (body as any).user.id,
-      text: '📤 Add Export Destination feature coming soon!\n\nYou\'ll be able to configure:\n• Airtable (with field mapping)\n• Linear\n• Notion\n• Jira\n• Google Sheets\n\nWith custom field mapping like Zapier.',
+    // Push a new modal view showing "coming soon"
+    await client.views.push({
+      trigger_id: (body as any).trigger_id,
+      view: {
+        type: 'modal',
+        title: { type: 'plain_text', text: 'Add Export Destination' },
+        close: { type: 'plain_text', text: 'Close' },
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '🚧 *Coming Soon!*\n\nYou\'ll be able to export insights to:',
+            },
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '• *Airtable* - With custom field mapping\n• *Linear* - Create issues automatically\n• *Notion* - Sync to your workspace\n• *Jira* - Add to backlog\n• *Google Sheets* - Export to spreadsheets\n\nWith Zapier-style field mapping! 🎉',
+            },
+          },
+        ],
+      },
     });
+    logger.info('✅ Export destination modal pushed');
   } catch (error) {
-    logger.error({ error }, '❌ Error handling add export destination');
+    logger.error({ error: error instanceof Error ? error.message : String(error) }, '❌ Error handling add export destination');
   }
 });
 

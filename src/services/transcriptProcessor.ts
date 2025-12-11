@@ -138,7 +138,17 @@ export async function processTranscript(transcriptId: string): Promise<void> {
     await refreshAppHome(transcript.slack_user_id);
 
   } catch (error) {
-    logger.error({ error }, `❌ Failed to process transcript ${transcriptId}`);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    const errorStack = error instanceof Error ? error.stack : undefined;
+
+    logger.error(
+      {
+        error: errorMessage,
+        stack: errorStack,
+        transcriptId,
+      },
+      `❌ Failed to process transcript ${transcriptId}: ${errorMessage}`
+    );
 
     // Mark as failed
     await updateStatus(transcriptId, TranscriptStatus.failed);
@@ -148,8 +158,8 @@ export async function processTranscript(transcriptId: string): Promise<void> {
       data: {
         transcript_id: transcriptId,
         activity_type: 'processing_failed',
-        message: `Processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        metadata: {},
+        message: `Processing failed: ${errorMessage}`,
+        metadata: { stack: errorStack },
       },
     });
 
