@@ -43,7 +43,7 @@ function getOpenAIClient(): OpenAI {
 const RESEARCH_DEPTH = 0.7;
 const TEMPERATURE = 0.35;
 const CLAUDE_MODEL = 'claude-sonnet-4-5-20250929';
-const GPT_MODEL = 'gpt-5-preview';
+const GPT_MODEL = 'gpt-4o'; // Using GPT-4o (latest generally available model)
 
 /**
  * Main processing function
