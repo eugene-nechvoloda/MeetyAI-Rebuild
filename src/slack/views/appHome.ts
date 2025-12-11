@@ -60,35 +60,7 @@ export async function buildHomeTab(userId: string, activeTab: 'transcripts' | 'i
       {
         type: 'divider',
       },
-      // Upload & Settings Buttons (always visible)
-      {
-        type: 'actions',
-        elements: [
-          {
-            type: 'button',
-            text: {
-              type: 'plain_text',
-              text: '➕ Upload New Transcript',
-              emoji: true,
-            },
-            style: 'primary',
-            action_id: 'upload_transcript_button',
-          },
-          {
-            type: 'button',
-            text: {
-              type: 'plain_text',
-              text: '⚙️ Settings',
-              emoji: true,
-            },
-            action_id: 'open_settings_button',
-          },
-        ],
-      },
-      {
-        type: 'divider',
-      },
-      // Tab Navigation
+      // Tabs (left) and Action Buttons (right) - all in one row
       {
         type: 'actions',
         elements: [
@@ -113,6 +85,25 @@ export async function buildHomeTab(userId: string, activeTab: 'transcripts' | 'i
             style: activeTab === 'insights' ? 'primary' : undefined,
             action_id: 'switch_to_insights',
             value: 'insights',
+          },
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '➕',
+              emoji: true,
+            },
+            style: 'primary',
+            action_id: 'upload_transcript_button',
+          },
+          {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: '⚙️',
+              emoji: true,
+            },
+            action_id: 'open_settings_button',
           },
         ],
       },
