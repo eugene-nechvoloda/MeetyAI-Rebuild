@@ -491,7 +491,12 @@ slack.action(/^insight_menu_.*/, async ({ ack, action, body, client }) => {
 
     const result = await exportInsight(insightId, config.id);
 
-    if (result.success) {
+    if (result.success && result.skipped) {
+      await client.chat.postMessage({
+        channel: userId,
+        text: `⏭️ Export skipped - this insight already exists in ${config.label}.\n\n${result.explanation}`,
+      });
+    } else if (result.success) {
       await client.chat.postMessage({
         channel: userId,
         text: `✅ Insight exported to ${config.label} successfully!`,

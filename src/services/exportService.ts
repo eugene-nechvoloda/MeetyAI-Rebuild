@@ -5,10 +5,16 @@
 
 import { logger, prisma } from '../index.js';
 import crypto from 'crypto';
+import Anthropic from '@anthropic-ai/sdk';
 
 // Encryption/decryption (simplified for MVP - use proper key management in production)
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-key-change-in-production-32b';
 const ALGORITHM = 'aes-256-gcm';
+
+// Anthropic client for duplicate detection
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
 
 function encrypt(text: string): string {
   const iv = crypto.randomBytes(16);
@@ -132,7 +138,7 @@ export async function testExportConnection(configId: string): Promise<{ success:
 /**
  * Export single insight
  */
-export async function exportInsight(insightId: string, configId: string): Promise<{ success: boolean; error?: string }> {
+export async function exportInsight(insightId: string, configId: string): Promise<{ success: boolean; error?: string; skipped?: boolean; explanation?: string }> {
   try {
     const insight = await prisma.insight.findUnique({
       where: { id: insightId },
@@ -162,7 +168,7 @@ export async function exportInsight(insightId: string, configId: string): Promis
     if (fieldMapping.source) mappedData[fieldMapping.source] = insight.transcript.title;
 
     // Export to provider
-    let result: { success: boolean; error?: string; recordId?: string };
+    let result: { success: boolean; error?: string; recordId?: string; skipped?: boolean };
     switch (config.provider) {
       case 'airtable':
         result = await exportToAirtable(apiKey, config.base_id!, config.table_id || config.table_name!, mappedData);
@@ -181,6 +187,16 @@ export async function exportInsight(insightId: string, configId: string): Promis
         break;
       default:
         return { success: false, error: 'Unknown provider' };
+    }
+
+    if (result.success && result.skipped) {
+      // Duplicate found, don't create new record but still mark as successful
+      logger.info({ insightId, configId }, '⏭️ Export skipped - duplicate found');
+      return {
+        success: true,
+        skipped: true,
+        explanation: 'This insight already exists in the destination',
+      };
     }
 
     if (result.success) {
@@ -278,8 +294,127 @@ async function testAirtableConnection(apiKey: string, baseId: string, tableIdOrN
   }
 }
 
-async function exportToAirtable(apiKey: string, baseId: string, tableIdOrName: string, data: any): Promise<{ success: boolean; error?: string; recordId?: string }> {
+async function fetchAirtableRecords(apiKey: string, baseId: string, tableIdOrName: string): Promise<{ success: boolean; records?: Array<{ id: string; fields: any }>; error?: string }> {
   try {
+    const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableIdOrName)}`, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      return { success: false, error: `Airtable API error: ${response.status} - ${error}` };
+    }
+
+    const result = await response.json() as { records: Array<{ id: string; fields: any }> };
+    return { success: true, records: result.records };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function checkForDuplicate(newRecord: any, existingRecords: Array<{ id: string; fields: any }>): Promise<{ isDuplicate: boolean; matchedRecordId?: string; explanation?: string }> {
+  try {
+    if (existingRecords.length === 0) {
+      return { isDuplicate: false };
+    }
+
+    // Prepare data for Claude
+    const existingRecordsText = existingRecords.map((record, idx) => {
+      const fields = Object.entries(record.fields)
+        .map(([key, value]) => `  ${key}: ${value}`)
+        .join('\n');
+      return `Record ${idx + 1} (ID: ${record.id}):\n${fields}`;
+    }).join('\n\n');
+
+    const newRecordText = Object.entries(newRecord)
+      .map(([key, value]) => `  ${key}: ${value}`)
+      .join('\n');
+
+    const prompt = `You are analyzing whether a new insight is a duplicate of existing records in Airtable.
+
+NEW INSIGHT TO BE ADDED:
+${newRecordText}
+
+EXISTING RECORDS IN AIRTABLE:
+${existingRecordsText}
+
+Your task is to determine if the new insight is a duplicate of any existing record. Consider:
+- Title similarity (even if worded differently)
+- Description/content similarity
+- Quote/evidence text
+- Speaker/author attribution
+- Overall semantic meaning and context
+
+Two insights are duplicates if they represent the SAME finding, even if:
+- Titles are worded differently
+- Descriptions have minor variations
+- They were extracted from different parts of the conversation
+
+Respond in JSON format:
+{
+  "isDuplicate": true/false,
+  "matchedRecordId": "record ID if duplicate, null otherwise",
+  "explanation": "brief explanation of your decision"
+}`;
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: 500,
+      messages: [{
+        role: 'user',
+        content: prompt,
+      }],
+    });
+
+    const textContent = response.content.find(block => block.type === 'text');
+    if (!textContent || textContent.type !== 'text') {
+      return { isDuplicate: false };
+    }
+
+    const result = JSON.parse(textContent.text);
+    logger.info({ result }, '🔍 Duplicate check result');
+
+    return {
+      isDuplicate: result.isDuplicate,
+      matchedRecordId: result.matchedRecordId,
+      explanation: result.explanation,
+    };
+  } catch (error) {
+    logger.error({ error }, '❌ Error checking for duplicates');
+    // If duplicate check fails, allow export to proceed
+    return { isDuplicate: false };
+  }
+}
+
+async function exportToAirtable(apiKey: string, baseId: string, tableIdOrName: string, data: any): Promise<{ success: boolean; error?: string; recordId?: string; skipped?: boolean }> {
+  try {
+    // Fetch existing records to check for duplicates
+    const existingResult = await fetchAirtableRecords(apiKey, baseId, tableIdOrName);
+
+    if (!existingResult.success) {
+      logger.warn({ error: existingResult.error }, '⚠️ Could not fetch existing records, proceeding with export');
+    } else if (existingResult.records) {
+      // Check for duplicates using Claude
+      const duplicateCheck = await checkForDuplicate(data, existingResult.records);
+
+      if (duplicateCheck.isDuplicate) {
+        logger.info({
+          matchedRecordId: duplicateCheck.matchedRecordId,
+          explanation: duplicateCheck.explanation,
+        }, '⏭️ Skipping duplicate export');
+
+        return {
+          success: true,
+          recordId: duplicateCheck.matchedRecordId,
+          skipped: true,
+        };
+      }
+    }
+
+    // No duplicate found, proceed with creating new record
     const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableIdOrName)}`, {
       method: 'POST',
       headers: {
@@ -295,7 +430,7 @@ async function exportToAirtable(apiKey: string, baseId: string, tableIdOrName: s
     }
 
     const result = await response.json() as { id: string };
-    return { success: true, recordId: result.id };
+    return { success: true, recordId: result.id, skipped: false };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
