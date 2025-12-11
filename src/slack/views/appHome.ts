@@ -60,10 +60,11 @@ export async function buildHomeTab(userId: string, activeTab: 'transcripts' | 'i
       {
         type: 'divider',
       },
-      // Tabs (left) and Action Buttons (right) - all in one row
+      // Navigation row: Tabs | Upload | Settings
       {
         type: 'actions',
         elements: [
+          // Tab buttons (left side)
           {
             type: 'button',
             text: {
@@ -86,6 +87,7 @@ export async function buildHomeTab(userId: string, activeTab: 'transcripts' | 'i
             action_id: 'switch_to_insights',
             value: 'insights',
           },
+          // Spacer buttons can't truly right-align, but we can style them distinctly
           {
             type: 'button',
             text: {
@@ -93,7 +95,6 @@ export async function buildHomeTab(userId: string, activeTab: 'transcripts' | 'i
               text: '➕',
               emoji: true,
             },
-            style: 'primary',
             action_id: 'upload_transcript_button',
           },
           {
