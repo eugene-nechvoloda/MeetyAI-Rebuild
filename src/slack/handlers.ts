@@ -210,10 +210,12 @@ slack.action('add_export_destination', async ({ ack, client, body }) => {
 
 // Export provider selection modal submission
 slack.view('select_export_provider', async ({ ack, body, client, view }) => {
-  await ack();
-
   const provider = view.state.values.provider_block.provider_select.selected_option?.value;
-  if (!provider) return;
+
+  if (!provider) {
+    await ack();
+    return;
+  }
 
   logger.info({ provider }, '📤 Export provider selected');
 
@@ -229,6 +231,7 @@ slack.view('select_export_provider', async ({ ack, body, client, view }) => {
       configModal = buildLinearConfigModal();
       break;
     default:
+      await ack();
       await client.chat.postMessage({
         channel: body.user.id,
         text: `🚧 ${provider} export is coming soon!`,
@@ -236,8 +239,9 @@ slack.view('select_export_provider', async ({ ack, body, client, view }) => {
       return;
   }
 
-  await client.views.push({
-    trigger_id: (body as any).trigger_id,
+  // Use response_action to push the next modal
+  await ack({
+    response_action: 'push',
     view: configModal as any,
   });
 });
@@ -266,13 +270,11 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
     return;
   }
 
-  await ack();
-
   logger.info({ userId, provider: 'airtable' }, '⚙️ Configuring Airtable export');
 
   try {
-    // Test connection first
-    const { testExportConnection, createExportConfig } = await import('../services/exportService.js');
+    // Create config first (will test connection when field mapping is submitted)
+    const { createExportConfig } = await import('../services/exportService.js');
 
     // Create temporary config for testing (non-null asserted after validation above)
     const tempConfigId = await createExportConfig({
@@ -284,16 +286,6 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
       tableName: tableName!,
       fieldMapping: {}, // Will be set in field mapping step
     });
-
-    const testResult = await testExportConnection(tempConfigId);
-
-    if (!testResult.success) {
-      await client.chat.postMessage({
-        channel: userId,
-        text: `❌ Failed to connect to Airtable: ${testResult.error}\n\nPlease check your API key, Base ID, and Table name.`,
-      });
-      return;
-    }
 
     // Show field mapping modal
     const { buildFieldMappingModal } = await import('./views/exportModals.js');
@@ -310,13 +302,15 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
       { text: { type: 'plain_text', text: 'Status' }, value: 'Status' },
     ];
 
-    await client.views.push({
-      trigger_id: (body as any).trigger_id,
+    // Push field mapping modal
+    await ack({
+      response_action: 'push',
       view: buildFieldMappingModal('airtable', [], destinationFields, tempConfigId) as any,
     });
 
   } catch (error) {
     logger.error({ error }, '❌ Error configuring Airtable export');
+    await ack();
     await client.chat.postMessage({
       channel: userId,
       text: `❌ Error: ${error instanceof Error ? error.message : 'Unknown error'}`,
@@ -416,9 +410,21 @@ slack.view('map_export_fields', async ({ ack, body, client, view }) => {
       data: { field_mapping: fieldMapping },
     });
 
+    // Test connection
+    const { testExportConnection } = await import('../services/exportService.js');
+    const testResult = await testExportConnection(configId);
+
+    if (!testResult.success) {
+      await client.chat.postMessage({
+        channel: userId,
+        text: `❌ Connection test failed: ${testResult.error}\n\nPlease check your credentials and try again.`,
+      });
+      return;
+    }
+
     await client.chat.postMessage({
       channel: userId,
-      text: `✅ Export destination configured successfully!\n\nYou can now export insights from the Insights tab.`,
+      text: `✅ Export destination configured and tested successfully!\n\nYou can now export insights from the Insights tab.`,
     });
 
   } catch (error) {
