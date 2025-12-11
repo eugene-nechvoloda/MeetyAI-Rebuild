@@ -172,12 +172,14 @@ export async function buildHomeTab(userId: string, activeTab: 'transcripts' | 'i
       } else {
         for (const insight of insights) {
           const typeEmoji = getInsightTypeEmoji(insight.type);
+          const confidencePercent = Math.round((insight.confidence || 0) * 100);
+          const confidenceEmoji = getConfidenceEmoji(insight.confidence || 0);
 
           blocks.push({
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `${typeEmoji} *${insight.title}*\n${insight.description}\n_From: ${insight.transcript.title}_`,
+              text: `${typeEmoji} *${insight.title}* ${confidenceEmoji} ${confidencePercent}%\n${insight.description}\n_From: ${insight.transcript.title}_`,
             },
             accessory: {
               type: 'overflow',
@@ -295,4 +297,10 @@ function getInsightTypeEmoji(type: string): string {
     default:
       return '📌';
   }
+}
+
+function getConfidenceEmoji(confidence: number): string {
+  if (confidence >= 0.8) return '🟢'; // High confidence
+  if (confidence >= 0.6) return '🟡'; // Medium confidence
+  return '🟠'; // Low confidence
 }

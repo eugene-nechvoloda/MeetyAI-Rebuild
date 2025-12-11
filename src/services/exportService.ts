@@ -1,0 +1,348 @@
+/**
+ * Export Service
+ * Handles exporting insights to various third-party platforms
+ */
+
+import { logger, prisma } from '../index.js';
+import crypto from 'crypto';
+
+// Encryption/decryption (simplified for MVP - use proper key management in production)
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'default-key-change-in-production-32b';
+const ALGORITHM = 'aes-256-gcm';
+
+function encrypt(text: string): string {
+  const iv = crypto.randomBytes(16);
+  const cipher = crypto.createCipheriv(ALGORITHM, Buffer.from(ENCRYPTION_KEY.padEnd(32).slice(0, 32)), iv);
+  let encrypted = cipher.update(text, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag();
+  return `${iv.toString('hex')}:${authTag.toString('hex')}:${encrypted}`;
+}
+
+function decrypt(encryptedText: string): string {
+  const parts = encryptedText.split(':');
+  const iv = Buffer.from(parts[0], 'hex');
+  const authTag = Buffer.from(parts[1], 'hex');
+  const encrypted = parts[2];
+  const decipher = crypto.createDecipheriv(ALGORITHM, Buffer.from(ENCRYPTION_KEY.padEnd(32).slice(0, 32)), iv);
+  decipher.setAuthTag(authTag);
+  let decrypted = decipher.update(encrypted, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+  return decrypted;
+}
+
+/**
+ * Create export configuration
+ */
+export async function createExportConfig(params: {
+  userId: string;
+  provider: string;
+  label: string;
+  apiKey: string;
+  apiSecret?: string;
+  baseId?: string;
+  tableName?: string;
+  teamId?: string;
+  projectId?: string;
+  databaseId?: string;
+  sheetId?: string;
+  workspaceId?: string;
+  apiEndpoint?: string;
+  fieldMapping: any;
+}): Promise<string> {
+  const config = await prisma.exportConfig.create({
+    data: {
+      user_id: params.userId,
+      provider: params.provider,
+      label: params.label,
+      api_key_encrypted: encrypt(params.apiKey),
+      api_secret_encrypted: params.apiSecret ? encrypt(params.apiSecret) : null,
+      auth_type: 'api_key',
+      base_id: params.baseId,
+      table_name: params.tableName,
+      team_id: params.teamId,
+      project_id: params.projectId,
+      database_id: params.databaseId,
+      sheet_id: params.sheetId,
+      workspace_id: params.workspaceId,
+      api_endpoint: params.apiEndpoint,
+      field_mapping: params.fieldMapping,
+      enabled: true,
+    },
+  });
+
+  logger.info({ configId: config.id, provider: params.provider }, '✅ Export config created');
+  return config.id;
+}
+
+/**
+ * Test export connection
+ */
+export async function testExportConnection(configId: string): Promise<{ success: boolean; error?: string }> {
+  const config = await prisma.exportConfig.findUnique({ where: { id: configId } });
+  if (!config) {
+    return { success: false, error: 'Configuration not found' };
+  }
+
+  try {
+    const apiKey = decrypt(config.api_key_encrypted);
+
+    switch (config.provider) {
+      case 'airtable':
+        return await testAirtableConnection(apiKey, config.base_id!, config.table_name!);
+      case 'linear':
+        return await testLinearConnection(apiKey, config.team_id!);
+      case 'notion':
+        return await testNotionConnection(apiKey, config.database_id!);
+      case 'jira':
+        return await testJiraConnection(apiKey, config.api_secret_encrypted ? decrypt(config.api_secret_encrypted) : '', config.api_endpoint!);
+      case 'google_sheets':
+        return await testGoogleSheetsConnection(apiKey, config.sheet_id!);
+      default:
+        return { success: false, error: 'Unknown provider' };
+    }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error({ error: errorMessage, configId }, '❌ Export connection test failed');
+    return { success: false, error: errorMessage };
+  }
+}
+
+/**
+ * Export single insight
+ */
+export async function exportInsight(insightId: string, configId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const insight = await prisma.insight.findUnique({
+      where: { id: insightId },
+      include: { transcript: true },
+    });
+
+    if (!insight) {
+      return { success: false, error: 'Insight not found' };
+    }
+
+    const config = await prisma.exportConfig.findUnique({ where: { id: configId } });
+    if (!config || !config.enabled) {
+      return { success: false, error: 'Export configuration not found or disabled' };
+    }
+
+    const apiKey = decrypt(config.api_key_encrypted);
+    const fieldMapping = config.field_mapping as any;
+
+    // Map insight fields to destination fields
+    const mappedData: any = {};
+    if (fieldMapping.title) mappedData[fieldMapping.title] = insight.title;
+    if (fieldMapping.description) mappedData[fieldMapping.description] = insight.description;
+    if (fieldMapping.type) mappedData[fieldMapping.type] = insight.type;
+    if (fieldMapping.confidence) mappedData[fieldMapping.confidence] = insight.confidence;
+    if (fieldMapping.evidence) mappedData[fieldMapping.evidence] = insight.evidence_text;
+    if (fieldMapping.speaker) mappedData[fieldMapping.speaker] = insight.speaker;
+    if (fieldMapping.source) mappedData[fieldMapping.source] = insight.transcript.title;
+
+    // Export to provider
+    let result: { success: boolean; error?: string; recordId?: string };
+    switch (config.provider) {
+      case 'airtable':
+        result = await exportToAirtable(apiKey, config.base_id!, config.table_name!, mappedData);
+        break;
+      case 'linear':
+        result = await exportToLinear(apiKey, config.team_id!, config.project_id, mappedData);
+        break;
+      case 'notion':
+        result = await exportToNotion(apiKey, config.database_id!, mappedData);
+        break;
+      case 'jira':
+        result = await exportToJira(apiKey, config.api_secret_encrypted ? decrypt(config.api_secret_encrypted) : '', config.api_endpoint!, mappedData);
+        break;
+      case 'google_sheets':
+        result = await exportToGoogleSheets(apiKey, config.sheet_id!, mappedData);
+        break;
+      default:
+        return { success: false, error: 'Unknown provider' };
+    }
+
+    if (result.success) {
+      // Update insight status
+      await prisma.insight.update({
+        where: { id: insightId },
+        data: {
+          exported: true,
+          status: 'exported',
+          export_destinations: {
+            ...((insight.export_destinations as any) || {}),
+            [config.provider]: {
+              configId,
+              recordId: result.recordId,
+              exportedAt: new Date().toISOString(),
+            },
+          },
+        },
+      });
+
+      // Update export config stats
+      await prisma.exportConfig.update({
+        where: { id: configId },
+        data: {
+          last_export_at: new Date(),
+          last_export_count: { increment: 1 },
+          total_exported: { increment: 1 },
+        },
+      });
+
+      logger.info({ insightId, configId, provider: config.provider }, '✅ Insight exported successfully');
+    }
+
+    return result;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error({ error: errorMessage, insightId, configId }, '❌ Export failed');
+    return { success: false, error: errorMessage };
+  }
+}
+
+// Provider-specific implementations
+
+async function testAirtableConnection(apiKey: string, baseId: string, tableName: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}?maxRecords=1`, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      return { success: false, error: `Airtable API error: ${response.status} - ${error}` };
+    }
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function exportToAirtable(apiKey: string, baseId: string, tableName: string, data: any): Promise<{ success: boolean; error?: string; recordId?: string }> {
+  try {
+    const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ fields: data }),
+    });
+
+    if (!response.ok) {
+      const error = await response.text();
+      return { success: false, error: `Airtable API error: ${response.status} - ${error}` };
+    }
+
+    const result = await response.json();
+    return { success: true, recordId: result.id };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function testLinearConnection(apiKey: string, teamId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const response = await fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: {
+        'Authorization': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        query: `query { team(id: "${teamId}") { id name } }`,
+      }),
+    });
+
+    if (!response.ok) {
+      return { success: false, error: `Linear API error: ${response.status}` };
+    }
+
+    const result = await response.json();
+    if (result.errors) {
+      return { success: false, error: result.errors[0].message };
+    }
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+async function exportToLinear(apiKey: string, teamId: string, projectId: string | null, data: any): Promise<{ success: boolean; error?: string; recordId?: string }> {
+  try {
+    const mutation = `
+      mutation IssueCreate($input: IssueCreateInput!) {
+        issueCreate(input: $input) {
+          success
+          issue {
+            id
+            identifier
+          }
+        }
+      }
+    `;
+
+    const input: any = {
+      teamId,
+      title: data[Object.keys(data).find(k => data[k] === data.title) || 'title'] || 'Untitled',
+      description: data[Object.keys(data).find(k => data[k] === data.description) || 'description'],
+    };
+
+    if (projectId) {
+      input.projectId = projectId;
+    }
+
+    const response = await fetch('https://api.linear.app/graphql', {
+      method: 'POST',
+      headers: {
+        'Authorization': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query: mutation, variables: { input } }),
+    });
+
+    if (!response.ok) {
+      return { success: false, error: `Linear API error: ${response.status}` };
+    }
+
+    const result = await response.json();
+    if (result.errors) {
+      return { success: false, error: result.errors[0].message };
+    }
+
+    return { success: true, recordId: result.data.issueCreate.issue.identifier };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+// Placeholder implementations for other providers
+async function testNotionConnection(apiKey: string, databaseId: string): Promise<{ success: boolean; error?: string }> {
+  return { success: true }; // TODO: Implement
+}
+
+async function exportToNotion(apiKey: string, databaseId: string, data: any): Promise<{ success: boolean; error?: string; recordId?: string }> {
+  return { success: false, error: 'Notion export not yet implemented' };
+}
+
+async function testJiraConnection(apiKey: string, apiSecret: string, apiEndpoint: string): Promise<{ success: boolean; error?: string }> {
+  return { success: true }; // TODO: Implement
+}
+
+async function exportToJira(apiKey: string, apiSecret: string, apiEndpoint: string, data: any): Promise<{ success: boolean; error?: string; recordId?: string }> {
+  return { success: false, error: 'Jira export not yet implemented' };
+}
+
+async function testGoogleSheetsConnection(apiKey: string, sheetId: string): Promise<{ success: boolean; error?: string }> {
+  return { success: true }; // TODO: Implement
+}
+
+async function exportToGoogleSheets(apiKey: string, sheetId: string, data: any): Promise<{ success: boolean; error?: string; recordId?: string }> {
+  return { success: false, error: 'Google Sheets export not yet implemented' };
+}

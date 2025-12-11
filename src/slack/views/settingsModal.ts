@@ -38,38 +38,16 @@ export function buildSettingsModal() {
           multiline: true,
           placeholder: {
             type: 'plain_text',
-            text: 'Example: In our context, a "pain point" is when users express frustration with workflow inefficiency...',
+            text: 'Example: Focus on workflow efficiency issues. A "pain point" means user frustration with task completion time...',
           },
         },
         label: {
           type: 'plain_text',
-          text: 'Custom Context',
+          text: 'System Instructions',
         },
         hint: {
           type: 'plain_text',
-          text: 'Define what you consider as pain points, hidden complaints, etc.',
-        },
-      },
-      {
-        type: 'input',
-        block_id: 'insight_examples_block',
-        optional: true,
-        element: {
-          type: 'plain_text_input',
-          action_id: 'insight_examples',
-          multiline: true,
-          placeholder: {
-            type: 'plain_text',
-            text: 'Title: User frustrated with login\nDescription: Customer mentioned difficulty\nType: Pain Point',
-          },
-        },
-        label: {
-          type: 'plain_text',
-          text: 'Insight Examples',
-        },
-        hint: {
-          type: 'plain_text',
-          text: 'Provide examples of insights you want to extract',
+          text: 'Guide the AI on what to look for in transcripts. Define pain points, complaints, opportunities, etc. Leave empty to use default analysis.',
         },
       },
       {
