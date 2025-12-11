@@ -174,12 +174,13 @@ export async function buildHomeTab(userId: string, activeTab: 'transcripts' | 'i
           const typeEmoji = getInsightTypeEmoji(insight.type);
           const confidencePercent = Math.round((insight.confidence || 0) * 100);
           const confidenceEmoji = getConfidenceEmoji(insight.confidence || 0);
+          const statusBadge = getStatusBadge(insight.status);
 
           blocks.push({
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `${typeEmoji} *${insight.title}* ${confidenceEmoji} ${confidencePercent}%\n${insight.description}\n_From: ${insight.transcript.title}_`,
+              text: `${typeEmoji} *${insight.title}* ${confidenceEmoji} ${confidencePercent}% ${statusBadge}\n${insight.description}\n_From: ${insight.transcript.title}_`,
             },
             accessory: {
               type: 'overflow',
@@ -303,4 +304,19 @@ function getConfidenceEmoji(confidence: number): string {
   if (confidence >= 0.8) return '🟢'; // High confidence
   if (confidence >= 0.6) return '🟡'; // Medium confidence
   return '🟠'; // Low confidence
+}
+
+function getStatusBadge(status: string): string {
+  switch (status) {
+    case 'new':
+      return '`New`';
+    case 'exported':
+      return '`Exported`';
+    case 'export_failed':
+      return '`Export Failed`';
+    case 'archived':
+      return '`Archived`';
+    default:
+      return '';
+  }
 }
