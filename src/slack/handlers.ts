@@ -94,7 +94,7 @@ slack.action('upload_transcript_button', async ({ body, ack, client }) => {
     logger.info('✅ Upload modal opened successfully');
   } catch (error) {
     logger.error({ error }, '❌ Error opening upload modal');
-    await ack(); // Ack again in case it failed before
+    // Don't call ack() again here - already called above
   }
 });
 

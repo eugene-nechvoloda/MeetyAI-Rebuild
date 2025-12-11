@@ -35,25 +35,26 @@ export function buildUploadModal() {
           text: 'Transcript Title',
         },
       },
-      {
-        type: 'input',
-        block_id: 'file_input',
-        optional: true,
-        element: {
-          type: 'file_input',
-          action_id: 'file_input',
-          filetypes: ['txt', 'pdf', 'doc', 'docx'],
-          max_files: 1,
-        },
-        label: {
-          type: 'plain_text',
-          text: 'Upload File',
-        },
-        hint: {
-          type: 'plain_text',
-          text: 'Upload a transcript file (TXT, PDF, DOC)',
-        },
-      },
+      // File upload temporarily disabled - requires files:read scope
+      // {
+      //   type: 'input',
+      //   block_id: 'file_input',
+      //   optional: true,
+      //   element: {
+      //     type: 'file_input',
+      //     action_id: 'file_input',
+      //     filetypes: ['txt', 'pdf', 'doc', 'docx'],
+      //     max_files: 1,
+      //   },
+      //   label: {
+      //     type: 'plain_text',
+      //     text: 'Upload File',
+      //   },
+      //   hint: {
+      //     type: 'plain_text',
+      //     text: 'Upload a transcript file (TXT, PDF, DOC)',
+      //   },
+      // },
       {
         type: 'input',
         block_id: 'transcript_text_block',
