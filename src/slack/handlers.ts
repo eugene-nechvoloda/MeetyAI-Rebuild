@@ -273,20 +273,6 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
   logger.info({ userId, provider: 'airtable' }, '⚙️ Configuring Airtable export');
 
   try {
-    // Create config first (will test connection when field mapping is submitted)
-    const { createExportConfig } = await import('../services/exportService.js');
-
-    // Create temporary config for testing (non-null asserted after validation above)
-    const tempConfigId = await createExportConfig({
-      userId,
-      provider: 'airtable',
-      label: label!,
-      apiKey: apiKey!,
-      baseId: baseId!,
-      tableName: tableName!,
-      fieldMapping: {}, // Will be set in field mapping step
-    });
-
     // Show field mapping modal
     const { buildFieldMappingModal } = await import('./views/exportModals.js');
 
@@ -302,10 +288,20 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
       { text: { type: 'plain_text', text: 'Status' }, value: 'Status' },
     ];
 
-    // Push field mapping modal
+    // Store config data in private_metadata (create actual DB record after field mapping)
+    const configData = {
+      userId,
+      provider: 'airtable',
+      label: label!,
+      apiKey: apiKey!,
+      baseId: baseId!,
+      tableName: tableName!,
+    };
+
+    // Push field mapping modal - must ack within 3 seconds!
     await ack({
       response_action: 'push',
-      view: buildFieldMappingModal('airtable', [], destinationFields, tempConfigId) as any,
+      view: buildFieldMappingModal('airtable', [], destinationFields, JSON.stringify(configData)) as any,
     });
 
   } catch (error) {
@@ -388,7 +384,6 @@ slack.view('map_export_fields', async ({ ack, body, client, view }) => {
   await ack();
 
   const userId = body.user.id;
-  const configId = view.private_metadata;
   const values = view.state.values;
 
   const fieldMapping = {
@@ -401,17 +396,30 @@ slack.view('map_export_fields', async ({ ack, body, client, view }) => {
     source: values.source_mapping_block?.source_mapping?.selected_option?.value,
   };
 
-  logger.info({ userId, configId, fieldMapping }, '🗺️ Field mapping configured');
+  logger.info({ userId, fieldMapping }, '🗺️ Field mapping configured');
 
   try {
-    // Update the config with field mapping
-    await prisma.exportConfig.update({
-      where: { id: configId },
-      data: { field_mapping: fieldMapping },
+    // Parse config data from private_metadata (stored as JSON from previous modal)
+    const configData = JSON.parse(view.private_metadata);
+
+    logger.info({ configData }, '📥 Parsed config data from private_metadata');
+
+    // Create ExportConfig database record with field mapping
+    const { createExportConfig, testExportConnection } = await import('../services/exportService.js');
+
+    const configId = await createExportConfig({
+      userId: configData.userId,
+      provider: configData.provider,
+      label: configData.label,
+      apiKey: configData.apiKey,
+      baseId: configData.baseId,
+      tableName: configData.tableName,
+      fieldMapping,
     });
 
+    logger.info({ configId }, '✅ Export config created');
+
     // Test connection
-    const { testExportConnection } = await import('../services/exportService.js');
     const testResult = await testExportConnection(configId);
 
     if (!testResult.success) {
