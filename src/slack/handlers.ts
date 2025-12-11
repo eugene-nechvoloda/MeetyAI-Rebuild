@@ -19,6 +19,7 @@ import {
   testExportConnection,
   createExportConfig,
   exportInsight,
+  getProviderFields,
 } from '../services/exportService.js';
 
 // App Home opened
@@ -281,17 +282,24 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
   logger.info({ userId, provider: 'airtable' }, '⚙️ Configuring Airtable export');
 
   try {
-    // Mock destination fields for MVP (in production, fetch from Airtable API)
-    const destinationFields = [
-      { text: { type: 'plain_text', text: 'Title' }, value: 'Title' },
-      { text: { type: 'plain_text', text: 'Description' }, value: 'Description' },
-      { text: { type: 'plain_text', text: 'Type' }, value: 'Type' },
-      { text: { type: 'plain_text', text: 'Confidence' }, value: 'Confidence' },
-      { text: { type: 'plain_text', text: 'Quote' }, value: 'Quote' },
-      { text: { type: 'plain_text', text: 'Speaker' }, value: 'Speaker' },
-      { text: { type: 'plain_text', text: 'Source' }, value: 'Source' },
-      { text: { type: 'plain_text', text: 'Status' }, value: 'Status' },
-    ];
+    // Fetch actual fields from Airtable
+    const fieldsResult = await getProviderFields('airtable', apiKey!, baseId!, tableName!);
+
+    if (!fieldsResult.success || !fieldsResult.fields) {
+      await ack({
+        response_action: 'errors',
+        errors: {
+          base_id_block: fieldsResult.error || 'Failed to fetch table fields',
+        },
+      });
+      return;
+    }
+
+    // Convert Airtable fields to Slack select options
+    const destinationFields = fieldsResult.fields.map(field => ({
+      text: { type: 'plain_text' as const, text: `${field.name} (${field.type})` },
+      value: field.name,
+    }));
 
     // Store config data in private_metadata (create actual DB record after field mapping)
     const configData = {
