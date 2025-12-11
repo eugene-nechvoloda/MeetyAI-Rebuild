@@ -42,6 +42,7 @@ export async function createExportConfig(params: {
   apiSecret?: string;
   baseId?: string;
   tableName?: string;
+  tableId?: string;
   teamId?: string;
   projectId?: string;
   databaseId?: string;
@@ -60,6 +61,7 @@ export async function createExportConfig(params: {
       auth_type: 'api_key',
       base_id: params.baseId,
       table_name: params.tableName,
+      table_id: params.tableId,
       team_id: params.teamId,
       project_id: params.projectId,
       database_id: params.databaseId,
@@ -78,7 +80,7 @@ export async function createExportConfig(params: {
 /**
  * Get available fields from provider
  */
-export async function getProviderFields(provider: string, apiKey: string, baseId?: string, tableName?: string): Promise<{ success: boolean; fields?: Array<{ id: string; name: string; type?: string }>; error?: string }> {
+export async function getProviderFields(provider: string, apiKey: string, baseId?: string, tableName?: string): Promise<{ success: boolean; fields?: Array<{ id: string; name: string; type?: string }>; tableId?: string; error?: string }> {
   try {
     switch (provider) {
       case 'airtable':
@@ -108,7 +110,7 @@ export async function testExportConnection(configId: string): Promise<{ success:
 
     switch (config.provider) {
       case 'airtable':
-        return await testAirtableConnection(apiKey, config.base_id!, config.table_name!);
+        return await testAirtableConnection(apiKey, config.base_id!, config.table_id || config.table_name!);
       case 'linear':
         return await testLinearConnection(apiKey, config.team_id!);
       case 'notion':
@@ -163,7 +165,7 @@ export async function exportInsight(insightId: string, configId: string): Promis
     let result: { success: boolean; error?: string; recordId?: string };
     switch (config.provider) {
       case 'airtable':
-        result = await exportToAirtable(apiKey, config.base_id!, config.table_name!, mappedData);
+        result = await exportToAirtable(apiKey, config.base_id!, config.table_id || config.table_name!, mappedData);
         break;
       case 'linear':
         result = await exportToLinear(apiKey, config.team_id!, config.project_id, mappedData);
@@ -222,7 +224,7 @@ export async function exportInsight(insightId: string, configId: string): Promis
 
 // Provider-specific implementations
 
-async function getAirtableFields(apiKey: string, baseId: string, tableName: string): Promise<{ success: boolean; fields?: Array<{ id: string; name: string; type: string }>; error?: string }> {
+async function getAirtableFields(apiKey: string, baseId: string, tableNameOrId: string): Promise<{ success: boolean; fields?: Array<{ id: string; name: string; type: string }>; tableId?: string; error?: string }> {
   try {
     const response = await fetch(`https://api.airtable.com/v0/meta/bases/${baseId}/tables`, {
       headers: {
@@ -237,19 +239,19 @@ async function getAirtableFields(apiKey: string, baseId: string, tableName: stri
     }
 
     const result = await response.json() as { tables: Array<{ id: string; name: string; fields: Array<{ id: string; name: string; type: string }> }> };
-    const table = result.tables.find(t => t.name === tableName || t.id === tableName);
+    const table = result.tables.find(t => t.name === tableNameOrId || t.id === tableNameOrId);
 
     if (!table) {
-      return { success: false, error: `Table "${tableName}" not found in base` };
+      return { success: false, error: `Table "${tableNameOrId}" not found in base` };
     }
 
-    return { success: true, fields: table.fields };
+    return { success: true, fields: table.fields, tableId: table.id };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
 }
 
-async function testAirtableConnection(apiKey: string, baseId: string, tableName: string): Promise<{ success: boolean; error?: string }> {
+async function testAirtableConnection(apiKey: string, baseId: string, tableIdOrName: string): Promise<{ success: boolean; error?: string }> {
   try {
     const response = await fetch(`https://api.airtable.com/v0/meta/bases/${baseId}/tables`, {
       headers: {
@@ -263,11 +265,11 @@ async function testAirtableConnection(apiKey: string, baseId: string, tableName:
       return { success: false, error: `Airtable API error: ${response.status} - ${error}` };
     }
 
-    const result = await response.json() as { tables: Array<{ name: string }> };
-    const tableExists = result.tables.some(t => t.name === tableName);
+    const result = await response.json() as { tables: Array<{ id: string; name: string }> };
+    const tableExists = result.tables.some(t => t.name === tableIdOrName || t.id === tableIdOrName);
 
     if (!tableExists) {
-      return { success: false, error: `Table "${tableName}" not found in base` };
+      return { success: false, error: `Table "${tableIdOrName}" not found in base` };
     }
 
     return { success: true };
@@ -276,9 +278,9 @@ async function testAirtableConnection(apiKey: string, baseId: string, tableName:
   }
 }
 
-async function exportToAirtable(apiKey: string, baseId: string, tableName: string, data: any): Promise<{ success: boolean; error?: string; recordId?: string }> {
+async function exportToAirtable(apiKey: string, baseId: string, tableIdOrName: string, data: any): Promise<{ success: boolean; error?: string; recordId?: string }> {
   try {
-    const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableName)}`, {
+    const response = await fetch(`https://api.airtable.com/v0/${baseId}/${encodeURIComponent(tableIdOrName)}`, {
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${apiKey}`,

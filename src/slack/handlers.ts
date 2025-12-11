@@ -309,6 +309,7 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
       apiKey: apiKey!,
       baseId: baseId!,
       tableName: tableName!,
+      tableId: fieldsResult.tableId, // Store table ID from Metadata API
     };
 
     // Push field mapping modal - must ack within 3 seconds!
@@ -421,6 +422,7 @@ slack.view('map_export_fields', async ({ ack, body, client, view }) => {
       apiKey: configData.apiKey,
       baseId: configData.baseId,
       tableName: configData.tableName,
+      tableId: configData.tableId,
       teamId: configData.teamId,
       projectId: configData.projectId,
       fieldMapping,

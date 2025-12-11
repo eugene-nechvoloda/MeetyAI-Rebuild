@@ -234,6 +234,7 @@ model ExportConfig {
   // Destination configuration
   base_id       String?
   table_name    String?
+  table_id      String?  // Airtable table ID (more reliable than name)
   team_id       String?
   project_id    String?
   database_id   String?
