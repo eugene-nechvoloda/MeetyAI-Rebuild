@@ -125,14 +125,14 @@ export function buildAirtableConfigModal() {
   };
 }
 
-export function buildFieldMappingModal(provider: string, sourceFields: any[], destinationFields: any[]) {
+export function buildFieldMappingModal(provider: string, sourceFields: any[], destinationFields: any[], configId?: string) {
   return {
     type: 'modal',
     callback_id: 'map_export_fields',
     title: { type: 'plain_text', text: 'Map Fields' },
     submit: { type: 'plain_text', text: 'Save & Test' },
     close: { type: 'plain_text', text: 'Back' },
-    private_metadata: provider,
+    private_metadata: configId || provider,
     blocks: [
       {
         type: 'section',

@@ -311,9 +311,7 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
 
     await client.views.push({
       trigger_id: (body as any).trigger_id,
-      view: buildFieldMappingModal('airtable', [], destinationFields) as any,
-      // Store config ID in private_metadata for later
-      private_metadata: tempConfigId,
+      view: buildFieldMappingModal('airtable', [], destinationFields, tempConfigId) as any,
     });
 
   } catch (error) {
