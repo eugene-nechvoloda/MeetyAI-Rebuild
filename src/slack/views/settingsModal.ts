@@ -158,56 +158,6 @@ export function buildSettingsModal() {
           },
         ],
       },
-      {
-        type: 'divider',
-      },
-      // Notifications Section
-      {
-        type: 'header',
-        text: {
-          type: 'plain_text',
-          text: '🔔 Notifications',
-          emoji: true,
-        },
-      },
-      {
-        type: 'input',
-        block_id: 'notify_completion_block',
-        optional: true,
-        element: {
-          type: 'checkboxes',
-          action_id: 'notify_completion',
-          options: [
-            {
-              text: {
-                type: 'plain_text',
-                text: 'Notify when analysis completes',
-              },
-              value: 'notify_on_completion',
-            },
-            {
-              text: {
-                type: 'plain_text',
-                text: 'Notify when analysis fails',
-              },
-              value: 'notify_on_failure',
-            },
-          ],
-          initial_options: [
-            {
-              text: {
-                type: 'plain_text',
-                text: 'Notify when analysis completes',
-              },
-              value: 'notify_on_completion',
-            },
-          ],
-        },
-        label: {
-          type: 'plain_text',
-          text: 'Notification Preferences',
-        },
-      },
     ],
   };
 }
