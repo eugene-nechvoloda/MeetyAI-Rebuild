@@ -94,23 +94,26 @@ slack.action('upload_transcript_button', async ({ body, ack, client }) => {
     logger.info('✅ Upload modal opened successfully');
   } catch (error) {
     logger.error({ error }, '❌ Error opening upload modal');
-    await ack(); // Ack again in case it failed before
+    // Don't call ack() again here - already called above
   }
 });
 
-// Settings button - placeholder for now
+// Settings button - opens settings modal
 slack.action('open_settings_button', async ({ ack, client, body }) => {
   try {
     await ack();
     logger.info('⚙️ Settings button clicked');
 
-    // For now, send a message that settings are coming soon
-    await client.chat.postMessage({
-      channel: (body as any).user.id,
-      text: '⚙️ Settings feature coming soon! You\'ll be able to configure:\n• AI models\n• Import sources\n• Export destinations\n• Custom context and examples',
+    const { buildSettingsModal } = await import('./views/settingsModal.js');
+
+    await client.views.open({
+      trigger_id: (body as any).trigger_id,
+      view: buildSettingsModal() as any,
     });
+
+    logger.info('✅ Settings modal opened successfully');
   } catch (error) {
-    logger.error({ error }, '❌ Error handling settings button');
+    logger.error({ error }, '❌ Error opening settings modal');
   }
 });
 
@@ -147,6 +150,38 @@ slack.action('switch_to_insights', async ({ ack, client, body }) => {
     });
   } catch (error) {
     logger.error({ error }, '❌ Error switching to insights tab');
+  }
+});
+
+// Add Import Source button (from Settings modal)
+slack.action('add_import_source', async ({ ack, client, body }) => {
+  try {
+    await ack();
+    logger.info('📥 Add Import Source clicked');
+
+    // For now, send a message that this feature is coming soon
+    await client.chat.postMessage({
+      channel: (body as any).user.id,
+      text: '📥 Add Import Source feature coming soon!\n\nYou\'ll be able to configure:\n• Zoom\n• Google Meet\n• Fireflies\n• Custom API\n\nWith automated import on a schedule.',
+    });
+  } catch (error) {
+    logger.error({ error }, '❌ Error handling add import source');
+  }
+});
+
+// Add Export Destination button (from Settings modal)
+slack.action('add_export_destination', async ({ ack, client, body }) => {
+  try {
+    await ack();
+    logger.info('📤 Add Export Destination clicked');
+
+    // For now, send a message that this feature is coming soon
+    await client.chat.postMessage({
+      channel: (body as any).user.id,
+      text: '📤 Add Export Destination feature coming soon!\n\nYou\'ll be able to configure:\n• Airtable (with field mapping)\n• Linear\n• Notion\n• Jira\n• Google Sheets\n\nWith custom field mapping like Zapier.',
+    });
+  } catch (error) {
+    logger.error({ error }, '❌ Error handling add export destination');
   }
 });
 
