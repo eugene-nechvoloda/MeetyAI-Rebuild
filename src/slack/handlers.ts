@@ -326,14 +326,31 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
     logger.info({ elapsed: Date.now() - startTime }, '⏱️ [PERF] Building field mapping modal');
     const fieldMappingModal = buildFieldMappingModal('airtable', [], destinationFields, JSON.stringify(configData));
 
-    logger.info({ elapsed: Date.now() - startTime }, '⏱️ [PERF] Calling ack() - THIS MUST HAPPEN WITHIN 3 SECONDS');
-    // Push field mapping modal - must ack within 3 seconds!
-    await ack({
-      response_action: 'push',
-      view: fieldMappingModal as any,
-    });
+    logger.info({
+      elapsed: Date.now() - startTime,
+      modalTitle: fieldMappingModal.title,
+      modalBlockCount: fieldMappingModal.blocks?.length,
+      privateMetadataLength: fieldMappingModal.private_metadata?.length,
+      callbackId: fieldMappingModal.callback_id,
+    }, '⏱️ [PERF] Modal built, calling ack()');
 
-    logger.info({ elapsed: Date.now() - startTime }, '✅ [PERF] ack() completed successfully');
+    // Push field mapping modal - must ack within 3 seconds!
+    try {
+      await ack({
+        response_action: 'push',
+        view: fieldMappingModal as any,
+      });
+      logger.info({ elapsed: Date.now() - startTime }, '✅ [PERF] ack() returned without error');
+    } catch (ackError) {
+      logger.error({
+        error: ackError,
+        errorType: typeof ackError,
+        errorMessage: ackError instanceof Error ? ackError.message : String(ackError),
+        errorStack: ackError instanceof Error ? ackError.stack : undefined,
+        elapsed: Date.now() - startTime,
+      }, '❌ [PERF] ack() threw an exception!');
+      throw ackError;
+    }
 
   } catch (error) {
     logger.error({ error, elapsed: Date.now() - startTime }, '❌ Error configuring Airtable export');
