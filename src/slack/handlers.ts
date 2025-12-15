@@ -228,25 +228,38 @@ slack.action('open_field_mapping_modal', async ({ ack, client, body, action }) =
     // Parse config data from button value
     const configData = JSON.parse((action as any).value);
 
-    // Build destination fields
-    const destinationFields = [
-      { text: { type: 'plain_text' as const, text: 'Name' }, value: 'Name' },
-      { text: { type: 'plain_text' as const, text: 'Title' }, value: 'Title' },
-      { text: { type: 'plain_text' as const, text: 'Description' }, value: 'Description' },
-      { text: { type: 'plain_text' as const, text: 'Notes' }, value: 'Notes' },
-      { text: { type: 'plain_text' as const, text: 'Type' }, value: 'Type' },
-      { text: { type: 'plain_text' as const, text: 'Category' }, value: 'Category' },
-      { text: { type: 'plain_text' as const, text: 'Status' }, value: 'Status' },
-      { text: { type: 'plain_text' as const, text: 'Priority' }, value: 'Priority' },
-      { text: { type: 'plain_text' as const, text: 'Source' }, value: 'Source' },
-      { text: { type: 'plain_text' as const, text: 'Author' }, value: 'Author' },
-      { text: { type: 'plain_text' as const, text: 'Speaker' }, value: 'Speaker' },
-      { text: { type: 'plain_text' as const, text: 'Quote' }, value: 'Quote' },
-      { text: { type: 'plain_text' as const, text: 'Evidence' }, value: 'Evidence' },
-      { text: { type: 'plain_text' as const, text: 'Confidence' }, value: 'Confidence' },
-      { text: { type: 'plain_text' as const, text: 'Date' }, value: 'Date' },
-      { text: { type: 'plain_text' as const, text: 'Tags' }, value: 'Tags' },
-    ];
+    // Fetch actual fields from Airtable
+    let destinationFields: Array<{ text: { type: 'plain_text'; text: string }; value: string }> = [];
+
+    try {
+      logger.info({ baseId: configData.baseId, tableName: configData.tableName }, '📡 Fetching Airtable fields');
+      const fieldsResult = await getProviderFields('airtable', configData.apiKey, configData.baseId, configData.tableName);
+
+      if (fieldsResult.success && fieldsResult.fields) {
+        // Convert Airtable fields to Slack select options
+        destinationFields = fieldsResult.fields.map(field => ({
+          text: { type: 'plain_text' as const, text: field.name },
+          value: field.name,
+        }));
+        logger.info({ fieldCount: destinationFields.length }, '✅ Fetched Airtable fields successfully');
+
+        // Store table ID in config for later use
+        if (fieldsResult.tableId) {
+          configData.tableId = fieldsResult.tableId;
+        }
+      } else {
+        throw new Error(fieldsResult.error || 'Failed to fetch fields');
+      }
+    } catch (error) {
+      logger.error({ error: error instanceof Error ? error.message : String(error) }, '❌ Error fetching Airtable fields');
+
+      // Show error to user
+      await client.chat.postMessage({
+        channel: body.user.id,
+        text: `❌ Error connecting to Airtable: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease check your credentials and try again.`,
+      });
+      return;
+    }
 
     // Open field mapping modal (fresh modal, depth 1)
     await client.views.open({
@@ -369,8 +382,10 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
     // Slack has a 3-modal depth limit. We're at: Settings → Provider → Airtable Config
     // Can't push a 4th modal. Instead: close and send a message with button
 
-    // Close all modals
-    await ack();
+    // Close all modals (use 'clear' to close entire stack, not just pop back to previous)
+    await ack({
+      response_action: 'clear',
+    });
 
     logger.info({ elapsed: Date.now() - startTime }, '✅ [PERF] ack() called, sending continuation message');
 
