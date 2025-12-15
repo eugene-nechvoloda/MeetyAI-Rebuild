@@ -219,6 +219,47 @@ slack.action('add_export_destination', async ({ ack, client, body }) => {
   }
 });
 
+// Open field mapping modal (from button after Airtable config)
+slack.action('open_field_mapping_modal', async ({ ack, client, body, action }) => {
+  try {
+    await ack();
+    logger.info('🗺️ Open field mapping button clicked');
+
+    // Parse config data from button value
+    const configData = JSON.parse((action as any).value);
+
+    // Build destination fields
+    const destinationFields = [
+      { text: { type: 'plain_text' as const, text: 'Name' }, value: 'Name' },
+      { text: { type: 'plain_text' as const, text: 'Title' }, value: 'Title' },
+      { text: { type: 'plain_text' as const, text: 'Description' }, value: 'Description' },
+      { text: { type: 'plain_text' as const, text: 'Notes' }, value: 'Notes' },
+      { text: { type: 'plain_text' as const, text: 'Type' }, value: 'Type' },
+      { text: { type: 'plain_text' as const, text: 'Category' }, value: 'Category' },
+      { text: { type: 'plain_text' as const, text: 'Status' }, value: 'Status' },
+      { text: { type: 'plain_text' as const, text: 'Priority' }, value: 'Priority' },
+      { text: { type: 'plain_text' as const, text: 'Source' }, value: 'Source' },
+      { text: { type: 'plain_text' as const, text: 'Author' }, value: 'Author' },
+      { text: { type: 'plain_text' as const, text: 'Speaker' }, value: 'Speaker' },
+      { text: { type: 'plain_text' as const, text: 'Quote' }, value: 'Quote' },
+      { text: { type: 'plain_text' as const, text: 'Evidence' }, value: 'Evidence' },
+      { text: { type: 'plain_text' as const, text: 'Confidence' }, value: 'Confidence' },
+      { text: { type: 'plain_text' as const, text: 'Date' }, value: 'Date' },
+      { text: { type: 'plain_text' as const, text: 'Tags' }, value: 'Tags' },
+    ];
+
+    // Open field mapping modal (fresh modal, depth 1)
+    await client.views.open({
+      trigger_id: (body as any).trigger_id,
+      view: buildFieldMappingModal('airtable', [], destinationFields, JSON.stringify(configData)) as any,
+    });
+
+    logger.info('✅ Field mapping modal opened');
+  } catch (error) {
+    logger.error({ error: error instanceof Error ? error.message : String(error) }, '❌ Error opening field mapping modal');
+  }
+});
+
 // Export provider selection modal submission
 slack.view('select_export_provider', async ({ ack, body, client, view }) => {
   const provider = view.state.values.provider_block.provider_select.selected_option?.value;
@@ -323,47 +364,48 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
       tableId: undefined, // Will be fetched during connection test
     };
 
-    logger.info({ elapsed: Date.now() - startTime }, '⏱️ [PERF] Building field mapping modal');
+    logger.info({ elapsed: Date.now() - startTime }, '⏱️ [PERF] Closing modal - avoiding 4th level (Slack limit)');
 
-    // TEST: Use a minimal modal to isolate the issue
-    const testModal = {
-      type: 'modal',
-      callback_id: 'test_simple_modal',
-      title: { type: 'plain_text', text: 'Test Modal' },
-      close: { type: 'plain_text', text: 'Close' },
+    // Slack has a 3-modal depth limit. We're at: Settings → Provider → Airtable Config
+    // Can't push a 4th modal. Instead: close and send a message with button
+
+    // Close all modals
+    await ack();
+
+    logger.info({ elapsed: Date.now() - startTime }, '✅ [PERF] ack() called, sending continuation message');
+
+    // Send message with button to open field mapping in a fresh modal
+    await client.chat.postMessage({
+      channel: userId,
+      text: `✅ Airtable credentials saved! Click below to map fields:`,
       blocks: [
         {
           type: 'section',
           text: {
             type: 'mrkdwn',
-            text: '*✅ Success!*\n\nIf you see this, modal chaining works. The issue is with the field mapping modal structure.',
+            text: `*✅ Airtable Credentials Saved*\n\n` +
+                  `Label: *${label}*\n` +
+                  `Base: \`${baseId}\`\n` +
+                  `Table: *${tableName}*\n\n` +
+                  `Click the button below to set up field mapping:`,
           },
         },
+        {
+          type: 'actions',
+          elements: [
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: '🗺️ Map Fields' },
+              action_id: 'open_field_mapping_modal',
+              value: JSON.stringify(configData),
+              style: 'primary',
+            },
+          ],
+        },
       ],
-    };
+    });
 
-    logger.info({
-      elapsed: Date.now() - startTime,
-      testMode: true,
-    }, '⏱️ [PERF] Testing with minimal modal');
-
-    // Push test modal - must ack within 3 seconds!
-    try {
-      await ack({
-        response_action: 'push',
-        view: testModal as any,
-      });
-      logger.info({ elapsed: Date.now() - startTime }, '✅ [PERF] ack() returned without error');
-    } catch (ackError) {
-      logger.error({
-        error: ackError,
-        errorType: typeof ackError,
-        errorMessage: ackError instanceof Error ? ackError.message : String(ackError),
-        errorStack: ackError instanceof Error ? ackError.stack : undefined,
-        elapsed: Date.now() - startTime,
-      }, '❌ [PERF] ack() threw an exception!');
-      throw ackError;
-    }
+    logger.info({ elapsed: Date.now() - startTime }, '✅ [PERF] Continuation message sent');
 
   } catch (error) {
     logger.error({ error, elapsed: Date.now() - startTime }, '❌ Error configuring Airtable export');
