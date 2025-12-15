@@ -324,21 +324,34 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
     };
 
     logger.info({ elapsed: Date.now() - startTime }, '⏱️ [PERF] Building field mapping modal');
-    const fieldMappingModal = buildFieldMappingModal('airtable', [], destinationFields, JSON.stringify(configData));
+
+    // TEST: Use a minimal modal to isolate the issue
+    const testModal = {
+      type: 'modal',
+      callback_id: 'test_simple_modal',
+      title: { type: 'plain_text', text: 'Test Modal' },
+      close: { type: 'plain_text', text: 'Close' },
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: '*✅ Success!*\n\nIf you see this, modal chaining works. The issue is with the field mapping modal structure.',
+          },
+        },
+      ],
+    };
 
     logger.info({
       elapsed: Date.now() - startTime,
-      modalTitle: fieldMappingModal.title,
-      modalBlockCount: fieldMappingModal.blocks?.length,
-      privateMetadataLength: fieldMappingModal.private_metadata?.length,
-      callbackId: fieldMappingModal.callback_id,
-    }, '⏱️ [PERF] Modal built, calling ack()');
+      testMode: true,
+    }, '⏱️ [PERF] Testing with minimal modal');
 
-    // Push field mapping modal - must ack within 3 seconds!
+    // Push test modal - must ack within 3 seconds!
     try {
       await ack({
         response_action: 'push',
-        view: fieldMappingModal as any,
+        view: testModal as any,
       });
       logger.info({ elapsed: Date.now() - startTime }, '✅ [PERF] ack() returned without error');
     } catch (ackError) {
