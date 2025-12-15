@@ -38,6 +38,34 @@ function decrypt(encryptedText: string): string {
 }
 
 /**
+ * Get all export configs for a user
+ */
+export async function getUserExportConfigs(userId: string) {
+  return await prisma.exportConfig.findMany({
+    where: { user_id: userId },
+    orderBy: { created_at: 'desc' },
+  });
+}
+
+/**
+ * Get a specific export config by ID
+ */
+export async function getExportConfigById(configId: string) {
+  return await prisma.exportConfig.findUnique({
+    where: { id: configId },
+  });
+}
+
+/**
+ * Delete an export config
+ */
+export async function deleteExportConfig(configId: string) {
+  return await prisma.exportConfig.delete({
+    where: { id: configId },
+  });
+}
+
+/**
  * Create export configuration
  */
 export async function createExportConfig(params: {

@@ -20,6 +20,8 @@ import {
   createExportConfig,
   exportInsight,
   getProviderFields,
+  getUserExportConfigs,
+  deleteExportConfig,
 } from '../services/exportService.js';
 
 // App Home opened
@@ -115,13 +117,18 @@ slack.action('upload_transcript_button', async ({ body, ack, client }) => {
 slack.action('open_settings_button', async ({ ack, client, body }) => {
   try {
     await ack();
-    logger.info('⚙️ Settings button clicked');
+    const userId = (body as any).user.id;
+    logger.info({ userId }, '⚙️ Settings button clicked');
+
+    // Fetch user's export configs
+    const exportConfigs = await getUserExportConfigs(userId);
+    logger.info({ configCount: exportConfigs.length }, '📊 Fetched export configs');
 
     const { buildSettingsModal } = await import('./views/settingsModal.js');
 
     await client.views.open({
       trigger_id: (body as any).trigger_id,
-      view: buildSettingsModal() as any,
+      view: buildSettingsModal(exportConfigs) as any,
     });
 
     logger.info('✅ Settings modal opened successfully');
@@ -216,6 +223,106 @@ slack.action('add_export_destination', async ({ ack, client, body }) => {
     logger.info('✅ Export provider selection modal pushed');
   } catch (error) {
     logger.error({ error: error instanceof Error ? error.message : String(error) }, '❌ Error handling add export destination');
+  }
+});
+
+// Export config menu actions (Edit/Delete)
+slack.action(/^export_config_menu_(.+)$/, async ({ ack, client, body, action }) => {
+  try {
+    await ack();
+    const userId = (body as any).user.id;
+    const selectedValue = (action as any).selected_option?.value;
+
+    if (!selectedValue) {
+      logger.warn('⚠️ No value selected in export config menu');
+      return;
+    }
+
+    const [actionType, configId] = selectedValue.split('_');
+    logger.info({ actionType, configId }, '⚙️ Export config menu action selected');
+
+    if (actionType === 'delete') {
+      // Delete the export config
+      await deleteExportConfig(configId);
+      logger.info({ configId }, '🗑️ Export config deleted');
+
+      // Refresh the settings modal
+      const exportConfigs = await getUserExportConfigs(userId);
+      const { buildSettingsModal } = await import('./views/settingsModal.js');
+
+      await client.views.update({
+        view_id: (body as any).view.id,
+        view: buildSettingsModal(exportConfigs) as any,
+      });
+
+      // Send confirmation message
+      await client.chat.postMessage({
+        channel: userId,
+        text: '✅ Export destination deleted successfully.',
+      });
+    } else if (actionType === 'edit') {
+      // TODO: Implement edit functionality
+      await client.chat.postMessage({
+        channel: userId,
+        text: '🚧 Edit functionality coming soon! For now, please delete and recreate the export destination.',
+      });
+    }
+  } catch (error) {
+    logger.error({ error: error instanceof Error ? error.message : String(error) }, '❌ Error handling export config menu action');
+  }
+});
+
+// Open field mapping modal (from button after Airtable config)
+slack.action('open_field_mapping_modal', async ({ ack, client, body, action }) => {
+  try {
+    await ack();
+    logger.info('🗺️ Open field mapping button clicked');
+
+    // Parse config data from button value
+    const configData = JSON.parse((action as any).value);
+
+    // Fetch actual fields from Airtable
+    let destinationFields: Array<{ text: { type: 'plain_text'; text: string }; value: string }> = [];
+
+    try {
+      logger.info({ baseId: configData.baseId, tableName: configData.tableName }, '📡 Fetching Airtable fields');
+      const fieldsResult = await getProviderFields('airtable', configData.apiKey, configData.baseId, configData.tableName);
+
+      if (fieldsResult.success && fieldsResult.fields) {
+        // Convert Airtable fields to Slack select options
+        destinationFields = fieldsResult.fields.map(field => ({
+          text: { type: 'plain_text' as const, text: field.name },
+          value: field.name,
+        }));
+        logger.info({ fieldCount: destinationFields.length }, '✅ Fetched Airtable fields successfully');
+
+        // Store table ID in config for later use
+        if (fieldsResult.tableId) {
+          configData.tableId = fieldsResult.tableId;
+        }
+      } else {
+        throw new Error(fieldsResult.error || 'Failed to fetch fields');
+      }
+    } catch (error) {
+      logger.error({ error: error instanceof Error ? error.message : String(error) }, '❌ Error fetching Airtable fields');
+
+      // Show error to user
+      await client.chat.postMessage({
+        channel: body.user.id,
+        text: `❌ Error connecting to Airtable: ${error instanceof Error ? error.message : 'Unknown error'}\n\nPlease check your credentials and try again.`,
+      });
+      return;
+    }
+
+    // Open field mapping modal (fresh modal, depth 1)
+    await client.views.open({
+      trigger_id: (body as any).trigger_id,
+      view: buildFieldMappingModal('airtable', [], destinationFields, JSON.stringify(configData)) as any,
+    });
+
+    logger.info('✅ Field mapping modal opened');
+  } catch (error) {
+    logger.error({ error: error instanceof Error ? error.message : String(error) }, '❌ Error opening field mapping modal');
   }
 });
 
@@ -323,17 +430,50 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
       tableId: undefined, // Will be fetched during connection test
     };
 
-    logger.info({ elapsed: Date.now() - startTime }, '⏱️ [PERF] Building field mapping modal');
-    const fieldMappingModal = buildFieldMappingModal('airtable', [], destinationFields, JSON.stringify(configData));
+    logger.info({ elapsed: Date.now() - startTime }, '⏱️ [PERF] Closing modal - avoiding 4th level (Slack limit)');
 
-    logger.info({ elapsed: Date.now() - startTime }, '⏱️ [PERF] Calling ack() - THIS MUST HAPPEN WITHIN 3 SECONDS');
-    // Push field mapping modal - must ack within 3 seconds!
+    // Slack has a 3-modal depth limit. We're at: Settings → Provider → Airtable Config
+    // Can't push a 4th modal. Instead: close and send a message with button
+
+    // Close all modals (use 'clear' to close entire stack, not just pop back to previous)
     await ack({
-      response_action: 'push',
-      view: fieldMappingModal as any,
+      response_action: 'clear',
     });
 
-    logger.info({ elapsed: Date.now() - startTime }, '✅ [PERF] ack() completed successfully');
+    logger.info({ elapsed: Date.now() - startTime }, '✅ [PERF] ack() called, sending continuation message');
+
+    // Send message with button to open field mapping in a fresh modal
+    await client.chat.postMessage({
+      channel: userId,
+      text: `✅ Airtable credentials saved! Click below to map fields:`,
+      blocks: [
+        {
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*✅ Airtable Credentials Saved*\n\n` +
+                  `Label: *${label}*\n` +
+                  `Base: \`${baseId}\`\n` +
+                  `Table: *${tableName}*\n\n` +
+                  `Click the button below to set up field mapping:`,
+          },
+        },
+        {
+          type: 'actions',
+          elements: [
+            {
+              type: 'button',
+              text: { type: 'plain_text', text: '🗺️ Map Fields' },
+              action_id: 'open_field_mapping_modal',
+              value: JSON.stringify(configData),
+              style: 'primary',
+            },
+          ],
+        },
+      ],
+    });
+
+    logger.info({ elapsed: Date.now() - startTime }, '✅ [PERF] Continuation message sent');
 
   } catch (error) {
     logger.error({ error, elapsed: Date.now() - startTime }, '❌ Error configuring Airtable export');

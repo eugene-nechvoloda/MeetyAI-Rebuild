@@ -2,7 +2,26 @@
  * Settings Modal View
  */
 
-export function buildSettingsModal() {
+function getProviderIcon(provider: string): string {
+  const icons: Record<string, string> = {
+    airtable: '📊',
+    linear: '🔷',
+    notion: '📝',
+    jira: '🔵',
+    sheets: '📈',
+  };
+  return icons[provider] || '📤';
+}
+
+interface ExportConfig {
+  id: string;
+  provider: string;
+  label: string;
+  enabled: boolean;
+  connection_tested: boolean;
+}
+
+export function buildSettingsModal(exportConfigs: ExportConfig[] = []) {
   return {
     type: 'modal',
     callback_id: 'settings_modal',
@@ -127,15 +146,40 @@ export function buildSettingsModal() {
           },
         ],
       },
-      {
-        type: 'context',
-        elements: [
-          {
-            type: 'mrkdwn',
-            text: '_No export destinations configured yet. Add Airtable, Linear, Notion, etc._',
-          },
-        ],
-      },
+      // List saved export configs
+      ...(exportConfigs.length > 0
+        ? exportConfigs.map((config) => ({
+            type: 'section' as const,
+            text: {
+              type: 'mrkdwn' as const,
+              text: `*${config.label}*\n${getProviderIcon(config.provider)} ${config.provider.charAt(0).toUpperCase() + config.provider.slice(1)}${config.connection_tested ? ' • ✅ Connected' : ' • ⚠️ Not tested'}`,
+            },
+            accessory: {
+              type: 'overflow' as const,
+              action_id: `export_config_menu_${config.id}`,
+              options: [
+                {
+                  text: { type: 'plain_text' as const, text: '✏️ Edit' },
+                  value: `edit_${config.id}`,
+                },
+                {
+                  text: { type: 'plain_text' as const, text: '🗑️ Delete' },
+                  value: `delete_${config.id}`,
+                },
+              ],
+            },
+          }))
+        : [
+            {
+              type: 'context' as const,
+              elements: [
+                {
+                  type: 'mrkdwn' as const,
+                  text: '_No export destinations configured yet. Add Airtable, Linear, Notion, etc._',
+                },
+              ],
+            },
+          ]),
     ],
   };
 }
