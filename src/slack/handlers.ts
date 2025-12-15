@@ -20,6 +20,8 @@ import {
   createExportConfig,
   exportInsight,
   getProviderFields,
+  getUserExportConfigs,
+  deleteExportConfig,
 } from '../services/exportService.js';
 
 // App Home opened
@@ -115,13 +117,18 @@ slack.action('upload_transcript_button', async ({ body, ack, client }) => {
 slack.action('open_settings_button', async ({ ack, client, body }) => {
   try {
     await ack();
-    logger.info('⚙️ Settings button clicked');
+    const userId = (body as any).user.id;
+    logger.info({ userId }, '⚙️ Settings button clicked');
+
+    // Fetch user's export configs
+    const exportConfigs = await getUserExportConfigs(userId);
+    logger.info({ configCount: exportConfigs.length }, '📊 Fetched export configs');
 
     const { buildSettingsModal } = await import('./views/settingsModal.js');
 
     await client.views.open({
       trigger_id: (body as any).trigger_id,
-      view: buildSettingsModal() as any,
+      view: buildSettingsModal(exportConfigs) as any,
     });
 
     logger.info('✅ Settings modal opened successfully');
@@ -216,6 +223,52 @@ slack.action('add_export_destination', async ({ ack, client, body }) => {
     logger.info('✅ Export provider selection modal pushed');
   } catch (error) {
     logger.error({ error: error instanceof Error ? error.message : String(error) }, '❌ Error handling add export destination');
+  }
+});
+
+// Export config menu actions (Edit/Delete)
+slack.action(/^export_config_menu_(.+)$/, async ({ ack, client, body, action }) => {
+  try {
+    await ack();
+    const userId = (body as any).user.id;
+    const selectedValue = (action as any).selected_option?.value;
+
+    if (!selectedValue) {
+      logger.warn('⚠️ No value selected in export config menu');
+      return;
+    }
+
+    const [actionType, configId] = selectedValue.split('_');
+    logger.info({ actionType, configId }, '⚙️ Export config menu action selected');
+
+    if (actionType === 'delete') {
+      // Delete the export config
+      await deleteExportConfig(configId);
+      logger.info({ configId }, '🗑️ Export config deleted');
+
+      // Refresh the settings modal
+      const exportConfigs = await getUserExportConfigs(userId);
+      const { buildSettingsModal } = await import('./views/settingsModal.js');
+
+      await client.views.update({
+        view_id: (body as any).view.id,
+        view: buildSettingsModal(exportConfigs) as any,
+      });
+
+      // Send confirmation message
+      await client.chat.postMessage({
+        channel: userId,
+        text: '✅ Export destination deleted successfully.',
+      });
+    } else if (actionType === 'edit') {
+      // TODO: Implement edit functionality
+      await client.chat.postMessage({
+        channel: userId,
+        text: '🚧 Edit functionality coming soon! For now, please delete and recreate the export destination.',
+      });
+    }
+  } catch (error) {
+    logger.error({ error: error instanceof Error ? error.message : String(error) }, '❌ Error handling export config menu action');
   }
 });
 
