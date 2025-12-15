@@ -257,6 +257,9 @@ slack.view('select_export_provider', async ({ ack, body, client, view }) => {
 
 // Airtable configuration modal submission
 slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
+  const startTime = Date.now();
+  logger.info('⏱️ [PERF] START: Airtable config handler');
+
   const userId = body.user.id;
   const values = view.state.values;
 
@@ -265,6 +268,8 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
   const baseId = values.base_id_block.base_id_input.value;
   const tableName = values.table_name_block.table_name_input.value;
 
+  logger.info({ elapsed: Date.now() - startTime }, '⏱️ [PERF] Extracted form values');
+
   if (!label || !apiKey || !baseId || !tableName) {
     const errors: Record<string, string> = {};
     if (!label) errors.label_block = 'Label is required';
@@ -272,6 +277,7 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
     if (!baseId) errors.base_id_block = 'Base ID is required';
     if (!tableName) errors.table_name_block = 'Table name is required';
 
+    logger.info({ elapsed: Date.now() - startTime }, '⏱️ [PERF] Calling ack with validation errors');
     await ack({
       response_action: 'errors',
       errors,
@@ -279,28 +285,33 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
     return;
   }
 
-  logger.info({ userId, provider: 'airtable' }, '⚙️ Configuring Airtable export');
+  logger.info({ userId, provider: 'airtable', elapsed: Date.now() - startTime }, '⚙️ Configuring Airtable export');
 
   try {
-    // Fetch actual fields from Airtable
-    const fieldsResult = await getProviderFields('airtable', apiKey!, baseId!, tableName!);
+    // Use common field names (user can type actual field names in the dropdown)
+    // Note: We skip fetching from Airtable API here to avoid 3-second timeout
+    // The connection test will happen when user submits field mapping
+    logger.info({ elapsed: Date.now() - startTime }, '⏱️ [PERF] Building destination fields array');
+    const destinationFields = [
+      { text: { type: 'plain_text' as const, text: 'Name' }, value: 'Name' },
+      { text: { type: 'plain_text' as const, text: 'Title' }, value: 'Title' },
+      { text: { type: 'plain_text' as const, text: 'Description' }, value: 'Description' },
+      { text: { type: 'plain_text' as const, text: 'Notes' }, value: 'Notes' },
+      { text: { type: 'plain_text' as const, text: 'Type' }, value: 'Type' },
+      { text: { type: 'plain_text' as const, text: 'Category' }, value: 'Category' },
+      { text: { type: 'plain_text' as const, text: 'Status' }, value: 'Status' },
+      { text: { type: 'plain_text' as const, text: 'Priority' }, value: 'Priority' },
+      { text: { type: 'plain_text' as const, text: 'Source' }, value: 'Source' },
+      { text: { type: 'plain_text' as const, text: 'Author' }, value: 'Author' },
+      { text: { type: 'plain_text' as const, text: 'Speaker' }, value: 'Speaker' },
+      { text: { type: 'plain_text' as const, text: 'Quote' }, value: 'Quote' },
+      { text: { type: 'plain_text' as const, text: 'Evidence' }, value: 'Evidence' },
+      { text: { type: 'plain_text' as const, text: 'Confidence' }, value: 'Confidence' },
+      { text: { type: 'plain_text' as const, text: 'Date' }, value: 'Date' },
+      { text: { type: 'plain_text' as const, text: 'Tags' }, value: 'Tags' },
+    ];
 
-    if (!fieldsResult.success || !fieldsResult.fields) {
-      await ack({
-        response_action: 'errors',
-        errors: {
-          base_id_block: fieldsResult.error || 'Failed to fetch table fields',
-        },
-      });
-      return;
-    }
-
-    // Convert Airtable fields to Slack select options
-    const destinationFields = fieldsResult.fields.map(field => ({
-      text: { type: 'plain_text' as const, text: `${field.name} (${field.type})` },
-      value: field.name,
-    }));
-
+    logger.info({ elapsed: Date.now() - startTime }, '⏱️ [PERF] Creating config data object');
     // Store config data in private_metadata (create actual DB record after field mapping)
     const configData = {
       userId,
@@ -309,17 +320,23 @@ slack.view('configure_airtable_export', async ({ ack, body, client, view }) => {
       apiKey: apiKey!,
       baseId: baseId!,
       tableName: tableName!,
-      tableId: fieldsResult.tableId, // Store table ID from Metadata API
+      tableId: undefined, // Will be fetched during connection test
     };
 
+    logger.info({ elapsed: Date.now() - startTime }, '⏱️ [PERF] Building field mapping modal');
+    const fieldMappingModal = buildFieldMappingModal('airtable', [], destinationFields, JSON.stringify(configData));
+
+    logger.info({ elapsed: Date.now() - startTime }, '⏱️ [PERF] Calling ack() - THIS MUST HAPPEN WITHIN 3 SECONDS');
     // Push field mapping modal - must ack within 3 seconds!
     await ack({
       response_action: 'push',
-      view: buildFieldMappingModal('airtable', [], destinationFields, JSON.stringify(configData)) as any,
+      view: fieldMappingModal as any,
     });
 
+    logger.info({ elapsed: Date.now() - startTime }, '✅ [PERF] ack() completed successfully');
+
   } catch (error) {
-    logger.error({ error }, '❌ Error configuring Airtable export');
+    logger.error({ error, elapsed: Date.now() - startTime }, '❌ Error configuring Airtable export');
     await ack();
     await client.chat.postMessage({
       channel: userId,
@@ -414,6 +431,20 @@ slack.view('map_export_fields', async ({ ack, body, client, view }) => {
 
     logger.info({ configData }, '📥 Parsed config data from private_metadata');
 
+    // Fetch table ID from Airtable (happens after ack(), so no timeout risk)
+    let tableId = configData.tableId;
+    if (!tableId && configData.provider === 'airtable') {
+      try {
+        const fieldsResult = await getProviderFields('airtable', configData.apiKey, configData.baseId, configData.tableName);
+        if (fieldsResult.success && fieldsResult.tableId) {
+          tableId = fieldsResult.tableId;
+          logger.info({ tableId }, '✅ Fetched table ID from Airtable');
+        }
+      } catch (error) {
+        logger.warn({ error }, '⚠️ Could not fetch table ID, will use table name');
+      }
+    }
+
     // Create ExportConfig database record with field mapping
     const configId = await createExportConfig({
       userId: configData.userId,
@@ -422,7 +453,7 @@ slack.view('map_export_fields', async ({ ack, body, client, view }) => {
       apiKey: configData.apiKey,
       baseId: configData.baseId,
       tableName: configData.tableName,
-      tableId: configData.tableId,
+      tableId: tableId,
       teamId: configData.teamId,
       projectId: configData.projectId,
       fieldMapping,
