@@ -208,7 +208,7 @@ export async function buildHomeTab(userId: string, activeTab: 'transcripts' | 'i
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: `${typeEmoji} *${insight.title}* ${confidenceEmoji} ${confidencePercent}% ${statusBadge}\n${insight.description}\n_From: ${insight.transcript.title}_`,
+              text: `${typeEmoji} *${insight.title}*\n${insight.description}\n_From: ${insight.transcript.title}_ • ${confidenceEmoji} ${confidencePercent}% • ${statusBadge}`,
             },
             accessory: {
               type: 'overflow',
