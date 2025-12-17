@@ -654,6 +654,118 @@ slack.view('map_export_fields', async ({ ack, body, client, view }) => {
   }
 });
 
+// Export All Insights button
+slack.action('export_all_insights', async ({ ack, body, client }) => {
+  try {
+    await ack();
+    const userId = body.user.id;
+
+    logger.info({ userId }, '📤 Export all insights clicked');
+
+    // Get user's export configurations
+    const exportConfigs = await prisma.exportConfig.findMany({
+      where: { user_id: userId, enabled: true },
+    });
+
+    if (exportConfigs.length === 0) {
+      await client.chat.postMessage({
+        channel: userId,
+        text: '📤 No export destinations configured yet.\n\nGo to Settings → Add Export Destination to set one up.',
+      });
+      return;
+    }
+
+    // Get all non-exported insights for this user
+    const insights = await prisma.insight.findMany({
+      where: {
+        transcript: {
+          slack_user_id: userId,
+        },
+        exported: false, // Only export non-exported insights
+        archived: false,
+      },
+      orderBy: { created_at: 'desc' },
+    });
+
+    if (insights.length === 0) {
+      await client.chat.postMessage({
+        channel: userId,
+        text: '✅ All insights are already exported!',
+      });
+      return;
+    }
+
+    // For MVP, export to the first configured destination
+    const config = exportConfigs[0];
+
+    await client.chat.postMessage({
+      channel: userId,
+      text: `🔄 Exporting ${insights.length} insights to ${config.label}...\n\n_This may take a moment. I'll let you know when it's done._`,
+    });
+
+    let exported = 0;
+    let skipped = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    // Export each insight
+    for (const insight of insights) {
+      try {
+        const result = await exportInsight(insight.id, config.id);
+
+        if (result.success && result.skipped) {
+          skipped++;
+        } else if (result.success) {
+          exported++;
+        } else {
+          failed++;
+          if (result.error) {
+            errors.push(`• ${insight.title}: ${result.error}`);
+          }
+        }
+      } catch (error) {
+        failed++;
+        errors.push(`• ${insight.title}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+
+    // Send summary
+    let summaryText = `✅ *Export Complete*\n\n`;
+    summaryText += `📊 *Summary:*\n`;
+    summaryText += `• ${exported} insights exported\n`;
+    if (skipped > 0) summaryText += `• ${skipped} skipped (duplicates)\n`;
+    if (failed > 0) summaryText += `• ${failed} failed\n`;
+
+    if (errors.length > 0) {
+      summaryText += `\n❌ *Errors:*\n${errors.slice(0, 5).join('\n')}`;
+      if (errors.length > 5) {
+        summaryText += `\n_...and ${errors.length - 5} more_`;
+      }
+    }
+
+    await client.chat.postMessage({
+      channel: userId,
+      text: summaryText,
+    });
+
+    // Refresh home view to update exported status
+    const view = await buildHomeTab(userId, 'insights');
+    await client.views.publish({
+      user_id: userId,
+      view,
+    });
+
+    logger.info({ userId, exported, skipped, failed }, '✅ Bulk export completed');
+
+  } catch (error) {
+    logger.error({ error: error instanceof Error ? error.message : String(error) }, '❌ Error in bulk export');
+    await client.chat.postMessage({
+      channel: body.user.id,
+      text: `❌ Error during bulk export: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    });
+  }
+});
+
 // Export insight from overflow menu
 slack.action(/^insight_menu_.*/, async ({ ack, action, body, client }) => {
   await ack();

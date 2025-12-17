@@ -161,6 +161,34 @@ export async function buildHomeTab(userId: string, activeTab: 'transcripts' | 'i
       }
     } else {
       // Insights Tab Content
+
+      // Export All button (if there are insights)
+      if (insights.length > 0) {
+        const notExportedCount = insights.filter(i => !i.exported).length;
+
+        blocks.push({
+          type: 'section',
+          text: {
+            type: 'mrkdwn',
+            text: `*${insights.length} insights found*${notExportedCount > 0 ? ` • ${notExportedCount} not exported yet` : ' • All exported ✅'}`,
+          },
+          accessory: notExportedCount > 0 ? {
+            type: 'button',
+            text: {
+              type: 'plain_text',
+              text: `📤 Export All (${notExportedCount})`,
+              emoji: true,
+            },
+            action_id: 'export_all_insights',
+            style: 'primary',
+          } : undefined,
+        });
+
+        blocks.push({
+          type: 'divider',
+        });
+      }
+
       if (insights.length === 0) {
         blocks.push({
           type: 'section',
