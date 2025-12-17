@@ -186,14 +186,44 @@ export async function exportInsight(insightId: string, configId: string): Promis
     const fieldMapping = config.field_mapping as any;
 
     // Map insight fields to destination fields
+    // Support consolidating multiple source fields into one destination field
+    const fieldParts: Record<string, Array<{ label: string; value: any }>> = {};
+
+    const addField = (destField: string, label: string, value: any) => {
+      if (!destField || value === null || value === undefined) return;
+      if (!fieldParts[destField]) fieldParts[destField] = [];
+      fieldParts[destField].push({ label, value });
+    };
+
+    addField(fieldMapping.title, 'Title', insight.title);
+    addField(fieldMapping.description, 'Description', insight.description);
+    addField(fieldMapping.type, 'Type', insight.type);
+    addField(fieldMapping.confidence, 'Confidence', insight.confidence);
+    addField(fieldMapping.evidence, 'Evidence', insight.evidence_text);
+    addField(fieldMapping.speaker, 'Speaker', insight.speaker);
+    addField(fieldMapping.source, 'Source', insight.transcript.title);
+
+    // Consolidate fields: if multiple source fields map to same destination, combine them
     const mappedData: any = {};
-    if (fieldMapping.title) mappedData[fieldMapping.title] = insight.title;
-    if (fieldMapping.description) mappedData[fieldMapping.description] = insight.description;
-    if (fieldMapping.type) mappedData[fieldMapping.type] = insight.type;
-    if (fieldMapping.confidence) mappedData[fieldMapping.confidence] = insight.confidence;
-    if (fieldMapping.evidence) mappedData[fieldMapping.evidence] = insight.evidence_text;
-    if (fieldMapping.speaker) mappedData[fieldMapping.speaker] = insight.speaker;
-    if (fieldMapping.source) mappedData[fieldMapping.source] = insight.transcript.title;
+    for (const [destField, parts] of Object.entries(fieldParts)) {
+      if (parts.length === 1) {
+        // Single mapping - use value directly
+        mappedData[destField] = parts[0].value;
+      } else {
+        // Multiple mappings - consolidate into formatted text
+        const consolidated = parts
+          .map(p => {
+            // For title and description, don't add label prefix
+            if (p.label === 'Title' || p.label === 'Description') {
+              return String(p.value);
+            }
+            // For other fields, add label
+            return `${p.label}: ${p.value}`;
+          })
+          .join('\n\n');
+        mappedData[destField] = consolidated;
+      }
+    }
 
     // Export to provider
     let result: { success: boolean; error?: string; recordId?: string; skipped?: boolean };
