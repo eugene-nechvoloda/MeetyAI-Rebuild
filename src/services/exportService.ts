@@ -349,16 +349,33 @@ async function checkForDuplicate(newRecord: any, existingRecords: Array<{ id: st
       return { isDuplicate: false };
     }
 
+    // Helper to safely stringify field values
+    const stringifyValue = (value: any): string => {
+      if (value === null || value === undefined) return 'null';
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+        return String(value);
+      }
+      if (Array.isArray(value)) {
+        // For arrays, just show the count and type
+        return `[${value.length} items]`;
+      }
+      if (typeof value === 'object') {
+        // For objects, just show the type
+        return '[object]';
+      }
+      return String(value);
+    };
+
     // Prepare data for Claude
     const existingRecordsText = existingRecords.map((record, idx) => {
       const fields = Object.entries(record.fields)
-        .map(([key, value]) => `  ${key}: ${value}`)
+        .map(([key, value]) => `  ${key}: ${stringifyValue(value)}`)
         .join('\n');
       return `Record ${idx + 1} (ID: ${record.id}):\n${fields}`;
     }).join('\n\n');
 
     const newRecordText = Object.entries(newRecord)
-      .map(([key, value]) => `  ${key}: ${value}`)
+      .map(([key, value]) => `  ${key}: ${stringifyValue(value)}`)
       .join('\n');
 
     const prompt = `You are analyzing whether a new insight is a TRUE DUPLICATE of existing records in Airtable.
@@ -424,7 +441,11 @@ Respond in JSON format:
       explanation: result.explanation,
     };
   } catch (error) {
-    logger.error({ error }, '❌ Error checking for duplicates');
+    logger.error({
+      error: error instanceof Error ? error.message : String(error),
+      errorType: typeof error,
+      errorStack: error instanceof Error ? error.stack : undefined,
+    }, '❌ Error checking for duplicates');
     // If duplicate check fails, allow export to proceed
     return { isDuplicate: false };
   }
