@@ -432,7 +432,16 @@ Respond in JSON format:
       return { isDuplicate: false };
     }
 
-    const result = JSON.parse(textContent.text);
+    // Extract JSON from response (Claude might include explanatory text)
+    const text = textContent.text;
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+
+    if (!jsonMatch) {
+      logger.warn({ responseText: text }, '⚠️ No JSON found in duplicate check response');
+      return { isDuplicate: false };
+    }
+
+    const result = JSON.parse(jsonMatch[0]);
     logger.info({ result }, '🔍 Duplicate check result');
 
     return {
