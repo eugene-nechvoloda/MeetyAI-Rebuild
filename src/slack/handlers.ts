@@ -752,7 +752,7 @@ slack.action('export_all_insights', async ({ ack, body, client }) => {
     const view = await buildHomeTab(userId, 'insights');
     await client.views.publish({
       user_id: userId,
-      view,
+      view: view as any,
     });
 
     logger.info({ userId, exported, skipped, failed }, '✅ Bulk export completed');
