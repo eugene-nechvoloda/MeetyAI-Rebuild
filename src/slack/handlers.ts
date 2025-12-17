@@ -22,6 +22,8 @@ import {
   getProviderFields,
   getUserExportConfigs,
   deleteExportConfig,
+  findExistingExportConfig,
+  updateExportConfig,
 } from '../services/exportService.js';
 
 // App Home opened
@@ -585,21 +587,47 @@ slack.view('map_export_fields', async ({ ack, body, client, view }) => {
       }
     }
 
-    // Create ExportConfig database record with field mapping
-    const configId = await createExportConfig({
+    // Check if config already exists for this destination
+    const existingConfig = await findExistingExportConfig({
       userId: configData.userId,
       provider: configData.provider,
-      label: configData.label,
-      apiKey: configData.apiKey,
       baseId: configData.baseId,
       tableName: configData.tableName,
-      tableId: tableId,
       teamId: configData.teamId,
-      projectId: configData.projectId,
-      fieldMapping,
+      databaseId: configData.databaseId,
+      sheetId: configData.sheetId,
     });
 
-    logger.info({ configId }, '✅ Export config created');
+    let configId: string;
+    if (existingConfig) {
+      // Update existing config instead of creating duplicate
+      configId = await updateExportConfig(existingConfig.id, {
+        label: configData.label,
+        apiKey: configData.apiKey,
+        baseId: configData.baseId,
+        tableName: configData.tableName,
+        tableId: tableId,
+        teamId: configData.teamId,
+        projectId: configData.projectId,
+        fieldMapping,
+      });
+      logger.info({ configId, updated: true }, '✅ Export config updated (existing config found)');
+    } else {
+      // Create new ExportConfig database record with field mapping
+      configId = await createExportConfig({
+        userId: configData.userId,
+        provider: configData.provider,
+        label: configData.label,
+        apiKey: configData.apiKey,
+        baseId: configData.baseId,
+        tableName: configData.tableName,
+        tableId: tableId,
+        teamId: configData.teamId,
+        projectId: configData.projectId,
+        fieldMapping,
+      });
+      logger.info({ configId, created: true }, '✅ Export config created');
+    }
 
     // Test connection
     const testResult = await testExportConnection(configId);

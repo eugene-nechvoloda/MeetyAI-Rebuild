@@ -66,6 +66,81 @@ export async function deleteExportConfig(configId: string) {
 }
 
 /**
+ * Find existing export config for same destination
+ */
+export async function findExistingExportConfig(params: {
+  userId: string;
+  provider: string;
+  baseId?: string;
+  tableName?: string;
+  teamId?: string;
+  databaseId?: string;
+  sheetId?: string;
+}) {
+  const where: any = {
+    user_id: params.userId,
+    provider: params.provider,
+  };
+
+  // Add provider-specific matching
+  if (params.provider === 'airtable' && params.baseId && params.tableName) {
+    where.base_id = params.baseId;
+    where.table_name = params.tableName;
+  } else if (params.provider === 'linear' && params.teamId) {
+    where.team_id = params.teamId;
+  } else if (params.provider === 'notion' && params.databaseId) {
+    where.database_id = params.databaseId;
+  } else if (params.provider === 'google_sheets' && params.sheetId) {
+    where.sheet_id = params.sheetId;
+  }
+
+  return await prisma.exportConfig.findFirst({ where });
+}
+
+/**
+ * Update existing export config
+ */
+export async function updateExportConfig(configId: string, params: {
+  label?: string;
+  apiKey?: string;
+  apiSecret?: string;
+  baseId?: string;
+  tableName?: string;
+  tableId?: string;
+  teamId?: string;
+  projectId?: string;
+  databaseId?: string;
+  sheetId?: string;
+  workspaceId?: string;
+  apiEndpoint?: string;
+  fieldMapping?: any;
+}) {
+  const data: any = {};
+
+  if (params.label !== undefined) data.label = params.label;
+  if (params.apiKey !== undefined) data.api_key_encrypted = encrypt(params.apiKey);
+  if (params.apiSecret !== undefined) data.api_secret_encrypted = params.apiSecret ? encrypt(params.apiSecret) : null;
+  if (params.baseId !== undefined) data.base_id = params.baseId;
+  if (params.tableName !== undefined) data.table_name = params.tableName;
+  if (params.tableId !== undefined) data.table_id = params.tableId;
+  if (params.teamId !== undefined) data.team_id = params.teamId;
+  if (params.projectId !== undefined) data.project_id = params.projectId;
+  if (params.databaseId !== undefined) data.database_id = params.databaseId;
+  if (params.sheetId !== undefined) data.sheet_id = params.sheetId;
+  if (params.workspaceId !== undefined) data.workspace_id = params.workspaceId;
+  if (params.apiEndpoint !== undefined) data.api_endpoint = params.apiEndpoint;
+  if (params.fieldMapping !== undefined) data.field_mapping = params.fieldMapping;
+
+  const config = await prisma.exportConfig.update({
+    where: { id: configId },
+    data,
+  });
+
+  logger.info({ configId, updates: Object.keys(data) }, '✅ Export config updated');
+  return config.id;
+}
+
+/**
  * Create export configuration
  */
 export async function createExportConfig(params: {
