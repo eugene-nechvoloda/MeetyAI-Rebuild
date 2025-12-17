@@ -289,33 +289,7 @@ async function getAirtableFields(apiKey: string, baseId: string, tableNameOrId: 
       return { success: false, error: `Table "${tableNameOrId}" not found in base` };
     }
 
-    // Filter out field types that we can't handle (linked records, computed fields, etc.)
-    const incompatibleTypes = [
-      'multipleRecordLinks',     // Linked records - requires array of record IDs
-      'multipleAttachments',     // Attachments - requires array of attachment objects
-      'multipleLookupValues',    // Computed field - can't be written to
-      'rollup',                  // Computed field - can't be written to
-      'formula',                 // Computed field - can't be written to
-      'count',                   // Computed field - can't be written to
-      'button',                  // Not writable
-      'multipleSelects',         // Requires array format
-      'multipleCollaborators',   // Requires array of collaborator objects
-      'barcode',                 // Requires special format
-      'lastModifiedTime',        // Auto-generated
-      'createdTime',             // Auto-generated
-      'lastModifiedBy',          // Auto-generated
-      'createdBy',               // Auto-generated
-    ];
-
-    const compatibleFields = table.fields.filter(field => !incompatibleTypes.includes(field.type));
-
-    logger.info({
-      totalFields: table.fields.length,
-      compatibleFields: compatibleFields.length,
-      filtered: table.fields.length - compatibleFields.length,
-    }, '📊 Filtered Airtable fields');
-
-    return { success: true, fields: compatibleFields, tableId: table.id };
+    return { success: true, fields: table.fields, tableId: table.id };
   } catch (error) {
     return { success: false, error: error instanceof Error ? error.message : String(error) };
   }
